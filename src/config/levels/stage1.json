@@ -3,7 +3,7 @@
   "levels": [
     {
       "gridSize": 2,
-      "par": 2,
+      "par": 1,
       "layout": [
         [1, null],
         [null, 2]
@@ -11,7 +11,7 @@
     },
     {
       "gridSize": 2,
-      "par": 3,
+      "par": 2,
       "layout": [
         [1, 2],
         [null, 1]
@@ -22,13 +22,13 @@
       "par": 4,
       "layout": [
         [null, 1, null],
-        [2, null, 3],
+        [1, null, 3],
         [null, 2, null]
       ]
     },
     {
       "gridSize": 3,
-      "par": 5,
+      "par": 4,
       "layout": [
         [1, null, 2],
         [null, 3, null],

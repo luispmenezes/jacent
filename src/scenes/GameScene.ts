@@ -20,8 +20,8 @@ export class GameScene extends Phaser.Scene {
   private movesLabel!: Phaser.GameObjects.Text;
   private tilesLabel!: Phaser.GameObjects.Text;
   private gameActive: boolean = true;
-  private restartButton!: Phaser.GameObjects.Sprite;
-  private undoButton!: Phaser.GameObjects.Sprite;
+  private restartButton!: Phaser.GameObjects.Text;
+  private undoButton!: Phaser.GameObjects.Text;
   private background!: Phaser.GameObjects.TileSprite;
   private backgroundPanel!: Phaser.GameObjects.Image;
   private undoStack: GameState[] = [];
@@ -70,84 +70,123 @@ export class GameScene extends Phaser.Scene {
   private createBackground(): void {
     const cam = this.cameras.main;
 
+    // Solid minimalist background
     this.background = this.add.tileSprite(cam.centerX, cam.centerY, cam.width, cam.height, 'background');
     this.background.setOrigin(0.5);
     this.background.setScrollFactor(0);
     this.background.setDepth(-2);
+    this.background.setTint(0xfafafa); // Light gray background
 
+    // Remove 9-patch panel for clean look
     this.backgroundPanel = this.add.image(cam.centerX, cam.centerY, 'bg9patch');
     this.backgroundPanel.setScrollFactor(0);
     this.backgroundPanel.setDepth(-1);
+    this.backgroundPanel.setAlpha(0); // Hide the panel completely
 
     this.updateBackgroundDimensions();
   }
 
   private createUI(): void {
-    const primaryColor = '#333333';
-    const mutedColor = '#666666';
+    const primaryColor = '#222222';
+    const mutedColor = '#999999';
 
-    this.titleText = this.add.text(0, 0, 'Jacent', {
+    // Will be updated to show current stage and level
+    this.titleText = this.add.text(0, 0, '', {
       fontSize: '48px',
       color: primaryColor,
       fontFamily: 'Arial',
-      fontStyle: 'bold',
+      fontStyle: 'normal',
     }).setOrigin(0.5);
 
-    this.movesLabel = this.add.text(0, 0, 'Moves', {
-      fontSize: '24px',
+    // Hidden label (not used)
+    this.movesLabel = this.add.text(0, 0, '', {
+      fontSize: '1px',
       color: mutedColor,
       fontFamily: 'Arial',
     });
+    this.movesLabel.setVisible(false);
 
     this.movesText = this.add.text(0, 0, '0', {
       fontSize: '36px',
       color: primaryColor,
       fontFamily: 'Arial',
-      fontStyle: 'bold',
+      fontStyle: 'normal',
     });
 
-    this.parText = this.add.text(0, 0, `Par: ${this.par}`, {
-      fontSize: '22px',
-      color: '#999999',
-      fontFamily: 'Arial',
-    });
-
-    this.tilesLabel = this.add.text(0, 0, 'Tiles', {
-      fontSize: '24px',
+    // Simplified par display as subscript
+    this.parText = this.add.text(0, 0, `/${this.par}`, {
+      fontSize: '18px',
       color: mutedColor,
       fontFamily: 'Arial',
-    }).setOrigin(1, 0);
+      fontStyle: 'normal',
+    });
 
-    this.tilesRemainingText = this.add.text(0, 0, '0', {
-      fontSize: '36px',
+    // Hidden tiles counter (not needed during gameplay)
+    this.tilesLabel = this.add.text(0, 0, '', {
+      fontSize: '1px',
+      color: mutedColor,
+      fontFamily: 'Arial',
+    });
+    this.tilesLabel.setVisible(false);
+
+    this.tilesRemainingText = this.add.text(0, 0, '', {
+      fontSize: '1px',
       color: primaryColor,
       fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(1, 0);
+    });
+    this.tilesRemainingText.setVisible(false);
 
-    this.restartButton = this.add.sprite(0, 0, 'restart-idle');
+    // Text-based restart button
+    this.restartButton = this.add.text(0, 0, 'Restart', {
+      fontFamily: 'Arial',
+      fontSize: '18px',
+      fontStyle: 'normal',
+      color: '#666666',
+    });
     this.restartButton.setInteractive({ useHandCursor: true });
-    this.restartButton.setScale(0.7);
+    this.restartButton.setAlpha(0.7);
+
+    this.restartButton.on('pointerover', () => {
+      this.restartButton.setColor('#222222');
+      this.restartButton.setAlpha(1);
+    });
+
+    this.restartButton.on('pointerout', () => {
+      this.restartButton.setColor('#666666');
+      this.restartButton.setAlpha(0.7);
+    });
 
     this.restartButton.on('pointerdown', () => {
-      this.restartButton.setTexture('restart-pressed');
       this.sound.play('click01');
     });
 
     this.restartButton.on('pointerup', () => {
-      this.restartButton.setTexture('restart-idle');
       this.sound.play('click02');
       this.restartGame();
     });
 
-    this.restartButton.on('pointerout', () => {
-      this.restartButton.setTexture('restart-idle');
+    // Text-based undo button
+    this.undoButton = this.add.text(0, 0, 'Undo', {
+      fontFamily: 'Arial',
+      fontSize: '18px',
+      fontStyle: 'normal',
+      color: '#666666',
+    });
+    this.undoButton.setInteractive({ useHandCursor: true });
+    this.undoButton.setAlpha(0.7);
+
+    this.undoButton.on('pointerover', () => {
+      if (this.undoStack.length > 0 && this.gameActive) {
+        this.undoButton.setColor('#222222');
+        this.undoButton.setAlpha(1);
+      }
     });
 
-    this.undoButton = this.add.sprite(0, 0, 'restart-idle');
-    this.undoButton.setInteractive({ useHandCursor: true });
-    this.undoButton.setScale(0.7);
-    this.undoButton.setAngle(180);
+    this.undoButton.on('pointerout', () => {
+      this.undoButton.setColor('#666666');
+      const alpha = this.undoStack.length > 0 ? 0.7 : 0.3;
+      this.undoButton.setAlpha(alpha);
+    });
 
     this.undoButton.on('pointerdown', () => {
       if (this.undoStack.length > 0 && this.gameActive) {
@@ -156,17 +195,20 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    this.instructionsText = this.add.text(0, 0, 'Drag adjacent tiles that differ by 1', {
-      fontSize: '18px',
+    // Hidden instruction text (not used in minimalist design)
+    this.instructionsText = this.add.text(0, 0, '', {
+      fontSize: '1px',
       color: '#999999',
       fontFamily: 'Arial',
-    }).setOrigin(0.5);
+    });
+    this.instructionsText.setVisible(false);
 
-    this.goalText = this.add.text(0, 0, 'Goal: Reduce to 1 tile', {
-      fontSize: '18px',
+    this.goalText = this.add.text(0, 0, '', {
+      fontSize: '1px',
       color: '#999999',
       fontFamily: 'Arial',
-    }).setOrigin(0.5);
+    });
+    this.goalText.setVisible(false);
 
     this.updateUndoButton();
     this.layoutUI();
@@ -184,67 +226,54 @@ export class GameScene extends Phaser.Scene {
 
     this.updateBackgroundDimensions();
 
-    const minDimension = Math.min(width, height);
-    const safePadding = Phaser.Math.Clamp(Math.round(minDimension * 0.045), 16, 42);
-    const titleSize = Phaser.Math.Clamp(Math.round(width * 0.15), 34, 66);
-    const labelSize = Phaser.Math.Clamp(Math.round(width * 0.048), 18, 28);
-    const valueSize = Phaser.Math.Clamp(Math.round(width * 0.085), 30, 52);
-    const smallSize = Phaser.Math.Clamp(Math.round(width * 0.04), 16, 26);
-    const instructionsSize = Phaser.Math.Clamp(Math.round(width * 0.04), 15, 22);
-    const buttonScale = Phaser.Math.Clamp(width / 640, 0.48, 0.88);
+    // Better mobile-friendly sizing
+    const safePadding = Phaser.Math.Clamp(width * 0.04, 12, 24);
+    const titleSize = Phaser.Math.Clamp(width * 0.04, 16, 24);
+    const valueSize = Phaser.Math.Clamp(width * 0.07, 24, 40);
+    const smallSize = Phaser.Math.Clamp(width * 0.035, 14, 20);
+    const buttonTextSize = Phaser.Math.Clamp(width * 0.032, 14, 18);
 
-    this.restartButton.setScale(buttonScale);
-    this.undoButton.setScale(buttonScale);
+    this.restartButton.setFontSize(buttonTextSize);
+    this.undoButton.setFontSize(buttonTextSize);
 
     if (this.backgroundPanel) {
       this.backgroundPanel.setDisplaySize(width - safePadding * 1.2, height - safePadding * 1.2);
     }
 
+    // Title at top center
     this.titleText.setFontSize(titleSize);
-    this.titleText.setPosition(centerX, safePadding + this.titleText.displayHeight / 2);
+    this.titleText.setPosition(centerX, safePadding + titleSize / 2);
 
-    this.movesLabel.setFontSize(labelSize);
-    this.movesLabel.setOrigin(0, 0);
-    this.movesLabel.setPosition(safePadding, this.titleText.y + this.titleText.displayHeight / 2 + safePadding * 0.25);
-
+    // Moves counter on left
     this.movesText.setFontSize(valueSize);
     this.movesText.setOrigin(0, 0);
-    this.movesText.setPosition(safePadding, this.movesLabel.y + this.movesLabel.displayHeight + safePadding * 0.1);
+    this.movesText.setPosition(safePadding, this.titleText.y + titleSize / 2 + safePadding * 0.8);
 
+    // Par text right next to moves
     this.parText.setFontSize(smallSize);
-    this.parText.setOrigin(0, 0);
-    this.parText.setPosition(safePadding, this.movesText.y + this.movesText.displayHeight + safePadding * 0.2);
-
-    this.tilesLabel.setFontSize(labelSize);
-    this.tilesLabel.setOrigin(1, 0);
-    this.tilesLabel.setPosition(width - safePadding, this.movesLabel.y);
-
-    this.tilesRemainingText.setFontSize(valueSize);
-    this.tilesRemainingText.setOrigin(1, 0);
-    this.tilesRemainingText.setPosition(width - safePadding, this.tilesLabel.y + this.tilesLabel.displayHeight + safePadding * 0.1);
-
-    const buttonY = this.tilesRemainingText.y + this.tilesRemainingText.displayHeight + safePadding * 0.55;
-    const buttonX = width - safePadding - this.restartButton.displayWidth / 2;
-    this.restartButton.setPosition(buttonX, buttonY);
-
-    const undoTargetX = this.restartButton.x - this.restartButton.displayWidth - safePadding * 0.6;
-    const undoMinX = safePadding + this.undoButton.displayWidth / 2;
-    this.undoButton.setPosition(Math.max(undoTargetX, undoMinX), buttonY);
-
-    this.instructionsText.setFontSize(instructionsSize);
-    this.goalText.setFontSize(instructionsSize);
-    this.instructionsText.setWordWrapWidth(width - safePadding * 2);
-    this.goalText.setWordWrapWidth(width - safePadding * 2);
-
-    this.instructionsText.setPosition(centerX, height - safePadding - this.instructionsText.displayHeight / 2);
-    this.goalText.setPosition(
-      centerX,
-      this.instructionsText.y - this.instructionsText.displayHeight / 2 - safePadding * 0.5 - this.goalText.displayHeight / 2
+    this.parText.setOrigin(0, 1);
+    this.parText.setPosition(
+      this.movesText.x + this.movesText.displayWidth + 2,
+      this.movesText.y + this.movesText.displayHeight
     );
 
-    const hudBottom = Math.max(this.parText.y + this.parText.displayHeight, this.undoButton.y + this.undoButton.displayHeight / 2);
-    const gridTop = hudBottom + safePadding * 0.8;
-    const gridBottom = Math.max(gridTop + 120, this.goalText.y - this.goalText.displayHeight / 2 - safePadding * 0.6);
+    // Buttons on the right side
+    this.undoButton.setOrigin(1, 0);
+    this.undoButton.setPosition(width - safePadding, this.movesText.y);
+
+    this.restartButton.setOrigin(1, 0);
+    this.restartButton.setPosition(
+      this.undoButton.x - this.undoButton.displayWidth - safePadding * 1.2,
+      this.movesText.y
+    );
+
+    // Calculate grid bounds
+    const hudBottom = Math.max(
+      this.movesText.y + this.movesText.displayHeight,
+      this.undoButton.y + this.undoButton.displayHeight
+    );
+    const gridTop = hudBottom + safePadding * 1.5;
+    const gridBottom = height - safePadding;
     const gridLeft = safePadding;
     const gridRight = width - safePadding;
 
@@ -276,7 +305,10 @@ export class GameScene extends Phaser.Scene {
     this.gameActive = true;
     this.undoStack = [];
     this.legalTargets = [];
-    this.parText.setText(`Par: ${this.par}`);
+    this.parText.setText(`/${this.par}`);
+
+    // Update title to show current stage and level
+    this.titleText.setText(`${stage.name} - Level ${nextLevelIndex + 1}`);
 
     if (this.grid) {
       this.grid.clear();
@@ -301,6 +333,9 @@ export class GameScene extends Phaser.Scene {
         const pos = grid.getWorldPosition(x, y);
         const tile = new Tile(this, pos.x, pos.y, digit, x, y);
 
+        // Scale tile to match grid tile size
+        const targetScale = tileSize / tile.width;
+
         tile.on('dragstart', () => {
           this.handleTileDragStart(tile);
         });
@@ -315,13 +350,13 @@ export class GameScene extends Phaser.Scene {
 
         grid.addTile(tile, x, y);
 
-        // Add entrance animation
+        // Add entrance animation with proper scaling
         tile.setAlpha(0);
         tile.setScale(0);
         this.tweens.add({
           targets: tile,
           alpha: 1,
-          scale: 1,
+          scale: targetScale,
           duration: 300,
           delay: index * 20,
           ease: 'Back.easeOut',
@@ -342,10 +377,22 @@ export class GameScene extends Phaser.Scene {
       return Math.floor(Math.min(cam.width, cam.height) / (gridSize + 1));
     }
 
-    const width = this.gridBounds.right - this.gridBounds.left;
-    const height = this.gridBounds.bottom - this.gridBounds.top;
-    const size = Math.floor(Math.min(width, height) / gridSize);
-    return Phaser.Math.Clamp(size, 56, 160);
+    const availableWidth = this.gridBounds.right - this.gridBounds.left;
+    const availableHeight = this.gridBounds.bottom - this.gridBounds.top;
+
+    // Calculate tile size with gaps (8% of tile size as gap between tiles)
+    // Total space needed = (gridSize * tileSize) + ((gridSize - 1) * gap)
+    // where gap = tileSize * 0.08
+    // So: space = tileSize * (gridSize + (gridSize - 1) * 0.08)
+    // Therefore: tileSize = space / (gridSize + (gridSize - 1) * 0.08)
+    const gapFactor = 0.08;
+    const widthSize = availableWidth / (gridSize + (gridSize - 1) * gapFactor);
+    const heightSize = availableHeight / (gridSize + (gridSize - 1) * gapFactor);
+
+    const size = Math.floor(Math.min(widthSize, heightSize));
+
+    // Adjust min/max for mobile - smaller minimum, larger maximum
+    return Phaser.Math.Clamp(size, 40, 140);
   }
 
   private getGridCenter(): { x: number; y: number } {
@@ -402,6 +449,12 @@ export class GameScene extends Phaser.Scene {
 
     const allTiles = grid.getAllTiles();
 
+    // Calculate merge range based on current grid size and tile spacing
+    const gridSize = grid.getGridSize();
+    const tileSize = this.getTileSizeForGrid(gridSize);
+    const gap = tileSize * 0.08;
+    const mergeRange = tileSize * 0.6; // 60% of tile size
+
     for (const tile of allTiles) {
       if (tile === droppedTile) continue;
 
@@ -412,7 +465,7 @@ export class GameScene extends Phaser.Scene {
         tile.y
       );
 
-      if (distance < 70) {
+      if (distance < mergeRange) {
         // Within merge range
         targetTile = tile;
         break;
@@ -482,10 +535,18 @@ export class GameScene extends Phaser.Scene {
 
     grid.clear();
 
+    // Get current tile size for scaling
+    const gridSize = grid.getGridSize();
+    const tileSize = this.getTileSizeForGrid(gridSize);
+
     // Restore tiles from state
     for (const tileData of state.tiles) {
       const pos = grid.getWorldPosition(tileData.gridX, tileData.gridY);
       const tile = new Tile(this, pos.x, pos.y, tileData.digit, tileData.gridX, tileData.gridY);
+
+      // Scale tile to match grid tile size
+      const targetScale = tileSize / tile.width;
+      tile.setScale(targetScale);
 
       tile.on('dragstart', () => {
         this.handleTileDragStart(tile);
@@ -513,7 +574,7 @@ export class GameScene extends Phaser.Scene {
 
   private updateUndoButton(): void {
     if (this.undoStack.length > 0) {
-      this.undoButton.setAlpha(1);
+      this.undoButton.setAlpha(0.7);
     } else {
       this.undoButton.setAlpha(0.3);
     }
@@ -522,16 +583,13 @@ export class GameScene extends Phaser.Scene {
   private updateUI(): void {
     this.movesText.setText(this.moves.toString());
 
-    const tilesRemaining = this.grid ? this.grid.getAllTiles().length : 0;
-    this.tilesRemainingText.setText(tilesRemaining.toString());
-
-    // Update color based on par
+    // Subtle color feedback based on par (very minimal)
     if (this.moves <= this.par) {
-      this.movesText.setColor('#4CAF50'); // Green - under par
+      this.movesText.setColor('#222222'); // Dark gray - on or under par
     } else if (this.moves <= this.par + 2) {
-      this.movesText.setColor('#FFC107'); // Yellow - slightly over
+      this.movesText.setColor('#666666'); // Medium gray - slightly over
     } else {
-      this.movesText.setColor('#F44336'); // Red - well over par
+      this.movesText.setColor('#888888'); // Light gray - well over par
     }
   }
 
@@ -549,8 +607,8 @@ export class GameScene extends Phaser.Scene {
     this.undoStack = [];
     this.updateUndoButton();
 
-    const grade = this.moves <= this.par ? 'PERFECT!' : this.moves <= this.par + 2 ? 'GREAT!' : 'COMPLETE!';
-    const gradeColor = this.moves <= this.par ? '#4CAF50' : this.moves <= this.par + 2 ? '#FFC107' : '#2196F3';
+    const grade = this.moves <= this.par ? 'Perfect' : this.moves <= this.par + 2 ? 'Great' : 'Complete';
+    const gradeColor = '#222222'; // Minimalist - same color for all
 
     const currentStage = this.stages[this.currentStageIndex];
     const isFinalLevelInStage = this.currentLevelIndex >= currentStage.levels.length - 1;
@@ -559,11 +617,11 @@ export class GameScene extends Phaser.Scene {
 
     let nextLevelText: string;
     if (gameComplete) {
-      nextLevelText = `${currentStage.name} complete!`;
+      nextLevelText = `${currentStage.name} complete`;
     } else if (isFinalLevelInStage) {
-      nextLevelText = `${currentStage.name} complete!`;
+      nextLevelText = `${currentStage.name} complete`;
     } else {
-      nextLevelText = `Level ${this.currentLevelIndex + 2} incoming…`;
+      nextLevelText = `Level ${this.currentLevelIndex + 2}`;
     }
 
     const cam = this.cameras.main;
@@ -571,14 +629,12 @@ export class GameScene extends Phaser.Scene {
     const winText = this.add.text(
       cam.centerX,
       cam.centerY,
-      `${grade}\n\nMoves: ${this.moves} / Par: ${this.par}\n\n${nextLevelText}`,
+      `${grade}\n\n${this.moves}/${this.par}\n\n${nextLevelText}`,
       {
         fontSize: `${winFontSize}px`,
         color: gradeColor,
         fontFamily: 'Arial',
-        fontStyle: 'bold',
-        stroke: '#ffffff',
-        strokeThickness: 6,
+        fontStyle: 'normal',
         align: 'center',
       }
     );
@@ -619,13 +675,11 @@ export class GameScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     const gameOverFont = Phaser.Math.Clamp(Math.round(cam.width * 0.07), 24, 48);
-    const gameOverText = this.add.text(cam.centerX, cam.centerY, 'No More Moves!\n\nClick restart to try again', {
+    const gameOverText = this.add.text(cam.centerX, cam.centerY, 'No moves left', {
       fontSize: `${gameOverFont}px`,
-      color: '#F44336',
+      color: '#666666',
       fontFamily: 'Arial',
-      fontStyle: 'bold',
-      stroke: '#ffffff',
-      strokeThickness: 6,
+      fontStyle: 'normal',
       align: 'center',
     });
     gameOverText.setOrigin(0.5);
@@ -671,13 +725,11 @@ export class GameScene extends Phaser.Scene {
   private showCompletionBanner(stageName: string): void {
     const cam = this.cameras.main;
     const bannerFontSize = Phaser.Math.Clamp(Math.round(cam.width * 0.08), 28, 52);
-    const completeText = this.add.text(cam.centerX, cam.centerY, `${stageName} complete!\n\nPress restart to play again`, {
+    const completeText = this.add.text(cam.centerX, cam.centerY, `${stageName} complete`, {
       fontSize: `${bannerFontSize}px`,
-      color: '#4CAF50',
+      color: '#222222',
       fontFamily: 'Arial',
-      fontStyle: 'bold',
-      stroke: '#ffffff',
-      strokeThickness: 6,
+      fontStyle: 'normal',
       align: 'center',
     });
     completeText.setOrigin(0.5);

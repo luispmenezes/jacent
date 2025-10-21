@@ -10,6 +10,7 @@ export class Grid {
   private tiles: (Tile | null)[][];
   private centerX: number;
   private centerY: number;
+  private readonly gapFactor: number = 0.08; // 8% gap between tiles
 
   constructor(
     scene: Phaser.Scene,
@@ -34,15 +35,18 @@ export class Grid {
   }
 
   public getWorldPosition(gridX: number, gridY: number): { x: number; y: number } {
+    const gap = this.tileSize * this.gapFactor;
     return {
-      x: this.startX + gridX * this.tileSize,
-      y: this.startY + gridY * this.tileSize,
+      x: this.startX + gridX * (this.tileSize + gap),
+      y: this.startY + gridY * (this.tileSize + gap),
     };
   }
 
   public getGridPosition(worldX: number, worldY: number): { gridX: number; gridY: number } | null {
-    const gridX = Math.floor((worldX - this.startX + this.tileSize / 2) / this.tileSize);
-    const gridY = Math.floor((worldY - this.startY + this.tileSize / 2) / this.tileSize);
+    const gap = this.tileSize * this.gapFactor;
+    const spacing = this.tileSize + gap;
+    const gridX = Math.floor((worldX - this.startX + spacing / 2) / spacing);
+    const gridY = Math.floor((worldY - this.startY + spacing / 2) / spacing);
 
     if (gridX >= 0 && gridX < this.gridSize && gridY >= 0 && gridY < this.gridSize) {
       return { gridX, gridY };
@@ -202,7 +206,9 @@ export class Grid {
   }
 
   private recalculateStartPosition(): void {
-    const totalGridSize = this.gridSize * this.tileSize;
+    const gap = this.tileSize * this.gapFactor;
+    const spacing = this.tileSize + gap;
+    const totalGridSize = this.gridSize * this.tileSize + (this.gridSize - 1) * gap;
     this.startX = this.centerX - totalGridSize / 2 + this.tileSize / 2;
     this.startY = this.centerY - totalGridSize / 2 + this.tileSize / 2;
   }

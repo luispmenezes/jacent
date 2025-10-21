@@ -35,8 +35,9 @@ export class Tile extends Phaser.GameObjects.Sprite {
       this.isDragging = true;
       this.dragStartX = this.x;
       this.dragStartY = this.y;
+      const currentScale = this.scale;
       this.setDepth(100);
-      this.setScale(1.1);
+      this.setScale(currentScale * 1.1);
       this.scene.sound.play('click01');
     });
 
@@ -47,8 +48,9 @@ export class Tile extends Phaser.GameObjects.Sprite {
 
     this.on('dragend', () => {
       this.isDragging = false;
+      const baseScale = this.scale / 1.1;
       this.setDepth(1);
-      this.setScale(1);
+      this.setScale(baseScale);
       this.scene.sound.play('click02');
 
       // Emit custom event for grid to handle
@@ -98,12 +100,10 @@ export class Tile extends Phaser.GameObjects.Sprite {
     }
 
     this.highlightGraphics.clear();
-    this.highlightGraphics.lineStyle(4, 0x4CAF50, 1);
-    this.highlightGraphics.strokeCircle(this.x, this.y, 55);
-
-    // Glow effect
-    this.highlightGraphics.lineStyle(8, 0x4CAF50, 0.3);
-    this.highlightGraphics.strokeCircle(this.x, this.y, 60);
+    // Minimal, subtle highlight - thin gray stroke, scaled to tile size
+    const radius = this.displayWidth * 0.48;
+    this.highlightGraphics.lineStyle(2, 0x999999, 0.6);
+    this.highlightGraphics.strokeCircle(this.x, this.y, radius);
   }
 
   public clearHighlight(): void {

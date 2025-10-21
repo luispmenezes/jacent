@@ -29,27 +29,28 @@ export class MenuScene extends Phaser.Scene {
     this.background.setOrigin(0.5);
     this.background.setScrollFactor(0);
     this.background.setDepth(-2);
+    this.background.setTint(0xfafafa); // Light gray minimalist background
 
     this.backgroundPanel = this.add.image(cam.centerX, cam.centerY, 'bg9patch');
     this.backgroundPanel.setScrollFactor(0);
     this.backgroundPanel.setDepth(-1);
-    this.backgroundPanel.setDisplaySize(cam.width * 0.92, cam.height * 0.92);
+    this.backgroundPanel.setAlpha(0); // Hide panel for clean look
   }
 
   private createUI(): void {
     const cam = this.cameras.main;
 
-    this.titleText = this.add.text(cam.centerX, cam.height * 0.23, 'Jacent', {
+    this.titleText = this.add.text(cam.centerX, cam.height * 0.35, 'Jacent', {
       fontFamily: 'Arial',
-      fontStyle: 'bold',
+      fontStyle: 'normal',
       fontSize: '72px',
-      color: '#333333',
+      color: '#222222',
     }).setOrigin(0.5);
 
-    this.subtitleText = this.add.text(cam.centerX, cam.height * 0.32, 'A +1 merge puzzle', {
+    this.subtitleText = this.add.text(cam.centerX, cam.height * 0.44, 'A puzzle game', {
       fontFamily: 'Arial',
-      fontSize: '26px',
-      color: '#666666',
+      fontSize: '20px',
+      color: '#999999',
     }).setOrigin(0.5);
 
     this.playButton = this.createButton('Play Now', () => {
@@ -70,32 +71,35 @@ export class MenuScene extends Phaser.Scene {
     const buttonHeight = 70;
 
     const container = this.add.container(0, 0);
-    const rect = this.add.rectangle(0, 0, buttonWidth, buttonHeight, 0x1e88e5, 1);
-    rect.setStrokeStyle(4, 0x1565c0, 1);
+    // Ghost button - transparent with subtle border
+    const rect = this.add.rectangle(0, 0, buttonWidth, buttonHeight, 0xfafafa, 0);
+    rect.setStrokeStyle(1, 0xcccccc, 1);
     rect.setInteractive({ useHandCursor: true });
 
     const text = this.add.text(0, 0, label, {
       fontFamily: 'Arial',
-      fontSize: '28px',
-      fontStyle: 'bold',
-      color: '#ffffff',
+      fontSize: '24px',
+      fontStyle: 'normal',
+      color: '#222222',
     }).setOrigin(0.5);
 
     rect.on('pointerover', () => {
-      rect.setFillStyle(0x2196f3, 1);
+      rect.setFillStyle(0xf0f0f0, 1);
+      rect.setStrokeStyle(1, 0x999999, 1);
     });
 
     rect.on('pointerout', () => {
-      rect.setFillStyle(0x1e88e5, 1);
+      rect.setFillStyle(0xfafafa, 0);
+      rect.setStrokeStyle(1, 0xcccccc, 1);
     });
 
     rect.on('pointerdown', () => {
-      rect.setFillStyle(0x0d47a1, 1);
+      rect.setFillStyle(0xe0e0e0, 1);
       this.sound.play('click01');
     });
 
     rect.on('pointerup', () => {
-      rect.setFillStyle(0x2196f3, 1);
+      rect.setFillStyle(0xf0f0f0, 1);
       onClick();
     });
 
@@ -114,29 +118,30 @@ export class MenuScene extends Phaser.Scene {
     }
 
     if (this.backgroundPanel) {
-      this.backgroundPanel.setDisplaySize(width * 0.92, height * 0.92);
+      this.backgroundPanel.setAlpha(0); // Keep hidden
       this.backgroundPanel.setPosition(cam.centerX, cam.centerY);
     }
 
-    const titleSize = Phaser.Math.Clamp(Math.round(width * 0.15), 48, 96);
-    const subtitleSize = Phaser.Math.Clamp(Math.round(width * 0.045), 18, 32);
+    // Mobile-friendly sizing
+    const titleSize = Phaser.Math.Clamp(width * 0.12, 40, 72);
+    const subtitleSize = Phaser.Math.Clamp(width * 0.04, 16, 24);
 
     this.titleText.setFontSize(titleSize);
     this.subtitleText.setFontSize(subtitleSize);
 
-    const topOffset = height * 0.22;
+    const topOffset = height * 0.3;
     this.titleText.setPosition(cam.centerX, topOffset);
-    this.subtitleText.setPosition(cam.centerX, topOffset + this.titleText.displayHeight * 0.65);
+    this.subtitleText.setPosition(cam.centerX, topOffset + titleSize * 0.8);
 
-    const buttonScale = Phaser.Math.Clamp(width / 640, 0.6, 1.1);
-    const buttonSpacing = Math.max(30, height * 0.04);
+    const buttonScale = Phaser.Math.Clamp(width / 600, 0.7, 1.0);
+    const buttonSpacing = height * 0.025;
 
     this.playButton.setScale(buttonScale);
     this.levelSelectButton.setScale(buttonScale);
 
-    const buttonsYStart = this.subtitleText.y + this.subtitleText.displayHeight + height * 0.12;
+    const buttonsYStart = this.subtitleText.y + subtitleSize + height * 0.08;
     this.playButton.setPosition(cam.centerX, buttonsYStart);
-    this.levelSelectButton.setPosition(cam.centerX, buttonsYStart + buttonSpacing * buttonScale);
+    this.levelSelectButton.setPosition(cam.centerX, buttonsYStart + 80 * buttonScale);
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
