@@ -61,8 +61,9 @@ export class Tile extends Phaser.GameObjects.Sprite {
       targets: this,
       x: this.dragStartX,
       y: this.dragStartY,
-      duration: 200,
-      ease: 'Power2',
+      duration: 420,
+      ease: 'Elastic.easeOut',
+      easeParams: [1, 0.4],
     });
   }
 
