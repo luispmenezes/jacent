@@ -4,6 +4,7 @@ export class MenuScene extends Phaser.Scene {
   private background!: Phaser.GameObjects.TileSprite;
   private backgroundPanel!: Phaser.GameObjects.Image;
   private playButton!: Phaser.GameObjects.Container;
+  private endlessModeButton!: Phaser.GameObjects.Container;
   private levelSelectButton!: Phaser.GameObjects.Container;
   private titleText!: Phaser.GameObjects.Text;
   private subtitleText!: Phaser.GameObjects.Text;
@@ -56,6 +57,11 @@ export class MenuScene extends Phaser.Scene {
     this.playButton = this.createButton('Play Now', () => {
       this.sound.play('click02');
       this.scene.start('GameScene', { stageIndex: 0, levelIndex: 0 });
+    });
+
+    this.endlessModeButton = this.createButton('Endless Mode', () => {
+      this.sound.play('click02');
+      this.scene.start('GameScene', { isEndless: true });
     });
 
     this.levelSelectButton = this.createButton('Level Select', () => {
@@ -137,11 +143,13 @@ export class MenuScene extends Phaser.Scene {
     const buttonSpacing = height * 0.025;
 
     this.playButton.setScale(buttonScale);
+    this.endlessModeButton.setScale(buttonScale);
     this.levelSelectButton.setScale(buttonScale);
 
     const buttonsYStart = this.subtitleText.y + subtitleSize + height * 0.08;
     this.playButton.setPosition(cam.centerX, buttonsYStart);
-    this.levelSelectButton.setPosition(cam.centerX, buttonsYStart + 80 * buttonScale);
+    this.endlessModeButton.setPosition(cam.centerX, buttonsYStart + 80 * buttonScale);
+    this.levelSelectButton.setPosition(cam.centerX, buttonsYStart + 160 * buttonScale);
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {

@@ -11,6 +11,7 @@ export class GameScene extends Phaser.Scene {
   private grid: Grid | null = null;
   private moves: number = 0;
   private par: number = 0; // Target moves for current level
+  private score: number = 0; // Score for endless mode
   private movesText!: Phaser.GameObjects.Text;
   private parText!: Phaser.GameObjects.Text;
   private tilesRemainingText!: Phaser.GameObjects.Text;
@@ -34,28 +35,38 @@ export class GameScene extends Phaser.Scene {
   private initialStageIndex: number = 0;
   private initialLevelIndex: number = 0;
   private emptyTiles: Phaser.GameObjects.Sprite[] = [];
+  private isEndless: boolean = false;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
-  init(data?: { stageIndex?: number; levelIndex?: number }): void {
-    const requestedStage = data?.stageIndex ?? 0;
-    const clampedStage = Phaser.Math.Clamp(requestedStage, 0, this.stages.length - 1);
-    const stage = this.stages[clampedStage];
-    const requestedLevel = data?.levelIndex ?? 0;
-    const clampedLevel = Phaser.Math.Clamp(requestedLevel, 0, stage.levels.length - 1);
+  init(data?: { stageIndex?: number; levelIndex?: number; isEndless?: boolean }): void {
+    this.isEndless = data?.isEndless ?? false;
 
-    this.initialStageIndex = clampedStage;
-    this.initialLevelIndex = clampedLevel;
+    if (!this.isEndless) {
+      const requestedStage = data?.stageIndex ?? 0;
+      const clampedStage = Phaser.Math.Clamp(requestedStage, 0, this.stages.length - 1);
+      const stage = this.stages[clampedStage];
+      const requestedLevel = data?.levelIndex ?? 0;
+      const clampedLevel = Phaser.Math.Clamp(requestedLevel, 0, stage.levels.length - 1);
+
+      this.initialStageIndex = clampedStage;
+      this.initialLevelIndex = clampedLevel;
+    }
   }
 
   create(): void {
     this.moves = 0;
+    this.score = 0;
     this.gameActive = true;
     this.undoStack = [];
-    this.currentStageIndex = this.initialStageIndex;
-    this.currentLevelIndex = this.initialLevelIndex;
+
+    if (!this.isEndless) {
+      this.currentStageIndex = this.initialStageIndex;
+      this.currentLevelIndex = this.initialLevelIndex;
+    }
+
     this.grid = null;
     this.emptyTiles = [];
 
@@ -217,7 +228,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createGrid(): void {
-    this.startLevel(this.currentLevelIndex);
+    if (this.isEndless) {
+      this.startEndlessMode();
+    } else {
+      this.startLevel(this.currentLevelIndex);
+    }
   }
 
   private layoutUI(): void {
@@ -307,6 +322,106 @@ export class GameScene extends Phaser.Scene {
           }
         }
       }
+    }
+  }
+
+  private startEndlessMode(): void {
+    this.moves = 0;
+    this.score = 0;
+    this.gameActive = true;
+    this.undoStack = [];
+    this.legalTargets = [];
+
+    // Update title for endless mode
+    this.titleText.setText('Endless Mode');
+    this.parText.setText(`Score: ${this.score}`);
+
+    if (this.grid) {
+      this.grid.clear();
+      this.grid = null;
+    }
+
+    // Clear old empty tile sprites
+    this.emptyTiles.forEach((sprite) => sprite.destroy());
+    this.emptyTiles = [];
+
+    this.layoutUI();
+
+    const gridSize = 4; // Always 4x4 for endless mode
+    const tileSize = this.getTileSizeForGrid(gridSize);
+    const { x: centerGridX, y: centerGridY } = this.getGridCenter();
+    const grid = new Grid(this, gridSize, tileSize, { x: centerGridX, y: centerGridY });
+    this.grid = grid;
+
+    // Add empty tile backgrounds for all grid positions
+    for (let y = 0; y < gridSize; y++) {
+      for (let x = 0; x < gridSize; x++) {
+        const pos = grid.getWorldPosition(x, y);
+        const emptyTile = this.add.sprite(pos.x, pos.y, 'tile-empty');
+        const targetScale = tileSize / emptyTile.width;
+        emptyTile.setScale(targetScale);
+        emptyTile.setDepth(-1);
+        this.emptyTiles.push(emptyTile);
+      }
+    }
+
+    // Generate random initial tiles
+    this.generateInitialEndlessTiles(grid, gridSize, tileSize);
+
+    this.input.setDraggable(grid.getAllTiles());
+    this.updateUndoButton();
+    this.updateUI();
+  }
+
+  private generateInitialEndlessTiles(grid: Grid, gridSize: number, tileSize: number): void {
+    // Start with ~8-10 random tiles in a 4x4 grid
+    const numInitialTiles = Phaser.Math.Between(8, 10);
+    const positions: { x: number; y: number }[] = [];
+
+    // Generate all possible positions
+    for (let y = 0; y < gridSize; y++) {
+      for (let x = 0; x < gridSize; x++) {
+        positions.push({ x, y });
+      }
+    }
+
+    // Shuffle positions
+    Phaser.Utils.Array.Shuffle(positions);
+
+    // Create tiles at random positions
+    for (let i = 0; i < numInitialTiles; i++) {
+      const pos = positions[i];
+      const digit = Phaser.Math.Between(1, 5); // Random digit between 1 and 5
+      const worldPos = grid.getWorldPosition(pos.x, pos.y);
+      const tile = new Tile(this, worldPos.x, worldPos.y, digit, pos.x, pos.y);
+
+      const targetScale = tileSize / tile.width;
+
+      tile.on('dragstart', () => {
+        this.handleTileDragStart(tile);
+      });
+
+      tile.on('drag', () => {
+        this.handleTileDrag(tile);
+      });
+
+      tile.on('drop', (droppedTile: Tile) => {
+        this.handleTileDrop(droppedTile);
+      });
+
+      grid.addTile(tile, pos.x, pos.y);
+
+      // Add entrance animation
+      tile.setAlpha(0);
+      tile.setScale(0);
+      this.tweens.add({
+        targets: tile,
+        alpha: 1,
+        scale: targetScale,
+        duration: 300,
+        delay: i * 20,
+        ease: 'Back.easeOut',
+      });
     }
   }
 
@@ -501,15 +616,31 @@ export class GameScene extends Phaser.Scene {
 
     if (targetTile && grid.canMerge(droppedTile, targetTile)) {
       // Legal merge!
+      const mergedValue = droppedTile.digit;
       grid.mergeTiles(droppedTile, targetTile);
       this.moves++;
+
+      // Update score in endless mode
+      if (this.isEndless) {
+        this.score += mergedValue;
+      }
+
       this.sound.play('right');
 
-      // Check win/lose conditions after a short delay
-      this.time.delayedCall(250, () => {
-        this.updateUI();
-        this.checkGameState();
-      });
+      // In endless mode, spawn a new tile after merge
+      if (this.isEndless) {
+        this.time.delayedCall(250, () => {
+          this.spawnNewTileInEndlessMode();
+          this.updateUI();
+          this.checkGameState();
+        });
+      } else {
+        // Check win/lose conditions after a short delay
+        this.time.delayedCall(250, () => {
+          this.updateUI();
+          this.checkGameState();
+        });
+      }
     } else {
       // Illegal merge or no target
       droppedTile.returnToStart();
@@ -608,23 +739,126 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateUI(): void {
-    this.movesText.setText(this.moves.toString());
-
-    // Subtle color feedback based on par (very minimal)
-    if (this.moves <= this.par) {
-      this.movesText.setColor('#222222'); // Dark gray - on or under par
-    } else if (this.moves <= this.par + 2) {
-      this.movesText.setColor('#666666'); // Medium gray - slightly over
+    if (this.isEndless) {
+      this.movesText.setText(this.moves.toString());
+      this.parText.setText(`Score: ${this.score}`);
+      this.movesText.setColor('#222222');
     } else {
-      this.movesText.setColor('#888888'); // Light gray - well over par
+      this.movesText.setText(this.moves.toString());
+
+      // Subtle color feedback based on par (very minimal)
+      if (this.moves <= this.par) {
+        this.movesText.setColor('#222222'); // Dark gray - on or under par
+      } else if (this.moves <= this.par + 2) {
+        this.movesText.setColor('#666666'); // Medium gray - slightly over
+      } else {
+        this.movesText.setColor('#888888'); // Light gray - well over par
+      }
     }
   }
 
+  private spawnNewTileInEndlessMode(): void {
+    if (!this.grid) return;
+
+    const gridSize = this.grid.getGridSize();
+
+    // Find all empty positions
+    const emptyPositions: { x: number; y: number }[] = [];
+
+    for (let y = 0; y < gridSize; y++) {
+      for (let x = 0; x < gridSize; x++) {
+        if (!this.grid.isOccupied(x, y)) {
+          emptyPositions.push({ x, y });
+        }
+      }
+    }
+
+    // If no empty positions, grid is full
+    if (emptyPositions.length === 0) return;
+
+    // Pick a random empty position
+    const spawnPos = Phaser.Utils.Array.GetRandom(emptyPositions);
+
+    // Find neighboring tiles (orthogonally adjacent)
+    const neighbors: number[] = [];
+    const { x, y } = spawnPos;
+
+    if (x > 0 && this.grid.isOccupied(x - 1, y)) {
+      neighbors.push(this.grid.getTile(x - 1, y)!.digit);
+    }
+    if (x < gridSize - 1 && this.grid.isOccupied(x + 1, y)) {
+      neighbors.push(this.grid.getTile(x + 1, y)!.digit);
+    }
+    if (y > 0 && this.grid.isOccupied(x, y - 1)) {
+      neighbors.push(this.grid.getTile(x, y - 1)!.digit);
+    }
+    if (y < gridSize - 1 && this.grid.isOccupied(x, y + 1)) {
+      neighbors.push(this.grid.getTile(x, y + 1)!.digit);
+    }
+
+    let digit: number;
+    if (neighbors.length > 0) {
+      // Pick a random neighbor
+      const neighborValue = Phaser.Utils.Array.GetRandom(neighbors);
+      // Spawn a tile that differs by 1-3 from that neighbor
+      const diff = Phaser.Math.Between(1, 3);
+      // Randomly choose to add or subtract
+      const direction = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
+      digit = neighborValue + (diff * direction);
+      // Clamp to valid range (1-7)
+      digit = Phaser.Math.Clamp(digit, 1, 7);
+    } else {
+      // No neighbors, spawn random low value
+      digit = Phaser.Math.Between(1, 3);
+    }
+    const worldPos = this.grid.getWorldPosition(spawnPos.x, spawnPos.y);
+
+    const tileSize = this.getTileSizeForGrid(gridSize);
+    const tile = new Tile(this, worldPos.x, worldPos.y, digit, spawnPos.x, spawnPos.y);
+
+    const targetScale = tileSize / tile.width;
+
+    tile.on('dragstart', () => {
+      this.handleTileDragStart(tile);
+    });
+
+    tile.on('drag', () => {
+      this.handleTileDrag(tile);
+    });
+
+    tile.on('drop', (droppedTile: Tile) => {
+      this.handleTileDrop(droppedTile);
+    });
+
+    this.grid.addTile(tile, spawnPos.x, spawnPos.y);
+
+    // Add entrance animation
+    tile.setAlpha(0);
+    tile.setScale(0);
+    this.tweens.add({
+      targets: tile,
+      alpha: 1,
+      scale: targetScale,
+      duration: 300,
+      ease: 'Back.easeOut',
+    });
+
+    // Make it draggable
+    this.input.setDraggable(tile);
+  }
+
   private checkGameState(): void {
-    if (this.grid && this.grid.checkWinCondition()) {
-      this.handleWin();
-    } else if (this.grid && !this.grid.hasLegalMoves()) {
-      this.handleGameOver();
+    // In endless mode, never trigger win condition (only game over when no moves)
+    if (this.isEndless) {
+      if (this.grid && !this.grid.hasLegalMoves()) {
+        this.handleGameOver();
+      }
+    } else {
+      if (this.grid && this.grid.checkWinCondition()) {
+        this.handleWin();
+      } else if (this.grid && !this.grid.hasLegalMoves()) {
+        this.handleGameOver();
+      }
     }
   }
 
@@ -841,17 +1075,36 @@ export class GameScene extends Phaser.Scene {
     this.gameActive = false;
     this.sound.play('wrong');
 
-    this.showModal('No moves left!', [
+    const message = this.isEndless
+      ? `Game Over!\n\nScore: ${this.score}\nMoves: ${this.moves}`
+      : 'No moves left!';
+
+    const buttons = [
       {
         text: 'Try Again',
         callback: () => this.restartGame(),
         primary: true,
       },
-    ]);
+    ];
+
+    // Add menu button for endless mode
+    if (this.isEndless) {
+      buttons.push({
+        text: 'Menu',
+        callback: () => this.scene.start('MenuScene'),
+        primary: false,
+      });
+    }
+
+    this.showModal(message, buttons);
   }
 
   private restartGame(): void {
-    this.scene.restart({ stageIndex: this.currentStageIndex, levelIndex: this.currentLevelIndex });
+    if (this.isEndless) {
+      this.scene.restart({ isEndless: true });
+    } else {
+      this.scene.restart({ stageIndex: this.currentStageIndex, levelIndex: this.currentLevelIndex });
+    }
   }
 
   private shakeCamera(): void {
