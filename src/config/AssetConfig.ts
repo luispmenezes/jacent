@@ -2,9 +2,10 @@ export const AssetConfig = {
   sprites: {
     tiles: {
       key: 'tiles',
-      frames: Array.from({ length: 18 }, (_, i) => ({
-        key: `tile-${i}`,
-        path: `assets/sprites/${String(i).padStart(3, '0')}.png`,
+      // Tiles 1-7 loaded from spritesheet assets/sprites/tiles.png
+      frames: Array.from({ length: 7 }, (_, i) => ({
+        key: `tile-${i + 1}`,
+        path: `assets/sprites/tiles.png`, // All tiles come from spritesheet
       })),
     },
     restart: {
@@ -31,4 +32,4 @@ export const AssetConfig = {
   },
 };
 
-export type TileFrame = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17;
+export type TileFrame = 1 | 2 | 3 | 4 | 5 | 6 | 7;

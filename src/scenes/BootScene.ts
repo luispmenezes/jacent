@@ -43,10 +43,12 @@ export class BootScene extends Phaser.Scene {
       percentText.destroy();
     });
 
-    // Load tile sprites (18 frames)
-    for (let i = 0; i < 18; i++) {
-      this.load.image(`tile-${i}`, `assets/sprites/${String(i).padStart(3, '0')}.png`);
-    }
+    // Load tile spritesheet (pixel art tiles 1-7, plus frame 8 for empty squares)
+    this.load.spritesheet('tiles-sheet', 'assets/sprites/tiles.png', {
+      frameWidth: 24,
+      frameHeight: 24,
+      endFrame: 7, // Load frames 0-7 (tiles 1-7, plus empty square)
+    });
 
     // Load UI assets
     this.load.image('background', AssetConfig.ui.background);
@@ -70,6 +72,23 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Extract individual tile textures from spritesheet
+    // This creates separate texture keys (tile-1, tile-2, etc.) that the game expects
+    const tilesTexture = this.textures.get('tiles-sheet');
+    for (let i = 1; i <= 7; i++) {
+      const frameIndex = i - 1; // Spritesheet frames are 0-indexed
+      const frame = tilesTexture.get(frameIndex);
+      const canvas = this.textures.createCanvas(`tile-${i}`, frame.width, frame.height);
+      canvas.drawFrame('tiles-sheet', frameIndex);
+      canvas.update();
+    }
+
+    // Extract frame 8 (index 7) for empty grid squares
+    const emptyFrame = tilesTexture.get(7);
+    const emptyCanvas = this.textures.createCanvas('tile-empty', emptyFrame.width, emptyFrame.height);
+    emptyCanvas.drawFrame('tiles-sheet', 7);
+    emptyCanvas.update();
+
     this.scene.start('MenuScene');
   }
 }

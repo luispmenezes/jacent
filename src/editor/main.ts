@@ -1,10 +1,10 @@
 import './editor.css';
-import { createEmptyGrid, deserializeGrid, generateLevel, serializeGrid } from './generator';
-import { GridState, isSolvable } from './solver';
+import { createEmptyGrid, deserializeGrid, generateLevel, normalizeTileValues, serializeGrid } from './generator';
+import { GridState, isSolvable, getMinMoves } from './solver';
 
 const MIN_GRID_SIZE = 2;
 const MAX_GRID_SIZE = 5;
-const MAX_TILE_VALUE = 9;
+const MAX_TILE_VALUE = 7; // Updated to match new pixel art tiles (1-7)
 
 let currentGrid: GridState = createEmptyGrid(3);
 let selectedCell: { x: number; y: number } | null = null;
@@ -99,22 +99,18 @@ function renderGrid(): void {
 function updateStatus(message?: string): void {
   const tiles = currentGrid.flat().filter((value) => value !== null).length;
   const solvable = isSolvable(currentGrid);
+  const minMoves = solvable ? getMinMoves(currentGrid) : null;
   statusContainer.innerHTML = '';
 
   const info = document.createElement('div');
-  info.innerHTML = `Tiles: <strong>${tiles}</strong> • Solvable: <strong class="${solvable ? 'yes' : 'no'}">${solvable ? 'Yes' : 'No'}</strong>`;
+  const movesText = minMoves !== null ? ` • Min Moves: <strong>${minMoves}</strong>` : '';
+  info.innerHTML = `Tiles: <strong>${tiles}</strong> • Solvable: <strong class="${solvable ? 'yes' : 'no'}">${solvable ? 'Yes' : 'No'}</strong>${movesText}`;
   statusContainer.appendChild(info);
 
-  const textarea = document.createElement('textarea');
-  textarea.value = serializeGrid(currentGrid);
-  textarea.readOnly = true;
-  textarea.rows = Math.max(4, currentGrid.length + 1);
-  statusContainer.appendChild(textarea);
-
   const jsonTextarea = document.createElement('textarea');
-  jsonTextarea.value = toJsonLayout(currentGrid);
+  jsonTextarea.value = toJsonLevel(currentGrid, minMoves ?? 0);
   jsonTextarea.readOnly = true;
-  jsonTextarea.rows = Math.max(4, currentGrid.length + 1);
+  jsonTextarea.rows = Math.max(6, currentGrid.length + 4);
   statusContainer.appendChild(jsonTextarea);
 
   const messageEl = document.createElement('div');
@@ -160,14 +156,23 @@ function copyToClipboard(text: string): void {
   });
 }
 
-function toJsonLayout(grid: GridState): string {
-  const lines = grid.map((row) => {
-    const content = row.map((cell) => (cell === null ? 'null' : cell.toString())).join(', ');
-    return `  [${content}]`;
+function toJsonLevel(grid: GridState, par: number): string {
+  // Format layout with each row on a single line
+  const layoutLines = grid.map((row) => {
+    return `    ${JSON.stringify(row)}`;
   });
 
-  const formatted = ['[', ...lines.map((line, index) => (index === lines.length - 1 ? line : `${line},`)), ']'];
-  return formatted.join('\n');
+  const lines = [
+    '{',
+    `  "gridSize": ${grid.length},`,
+    `  "par": ${par},`,
+    '  "layout": [',
+    layoutLines.join(',\n'),
+    '  ]',
+    '}',
+  ];
+
+  return lines.join('\n');
 }
 
 function createSidebarControls(): void {
@@ -215,7 +220,7 @@ function createSidebarControls(): void {
       gridSize: currentGrid.length,
       tileCount: desiredTiles,
       minValue: 1,
-      maxValue: 6,
+      maxValue: 7,
       maxAttempts: 800,
     });
     if (generated) {
@@ -234,27 +239,34 @@ function createSidebarControls(): void {
   }, 'secondary');
   sidebar.appendChild(checkButton);
 
+  const normalizeButton = createButton('Normalize Tiles', () => {
+    currentGrid = normalizeTileValues(currentGrid);
+    renderGrid();
+    updateStatus('Tiles normalized to consecutive values starting from 1');
+  }, 'secondary');
+  sidebar.appendChild(normalizeButton);
+
   const clearButton = createButton('Clear Grid', clearGrid, 'secondary');
   sidebar.appendChild(clearButton);
 
   const importWrapper = document.createElement('div');
   importWrapper.className = 'control';
   const importLabel = document.createElement('label');
-  importLabel.textContent = 'Import Layout';
+  importLabel.textContent = 'Import Level';
   const importTextarea = document.createElement('textarea');
-  importTextarea.rows = 6;
-  importTextarea.placeholder = 'Paste grid using numbers and . for empty cells';
-  const importButton = createButton('Load Layout', () => {
+  importTextarea.rows = 8;
+  importTextarea.placeholder = 'Paste level definition:\n{\n  "gridSize": 3,\n  "par": 5,\n  "layout": [...]\n}';
+  const importButton = createButton('Load Level', () => {
     try {
       const parsed = deserializeGrid(importTextarea.value);
       const size = parsed.length;
       if (size < MIN_GRID_SIZE || size > MAX_GRID_SIZE) {
         throw new Error('Grid size out of range');
       }
-      currentGrid = parsed;
+      currentGrid = normalizeTileValues(parsed);
       (sizeControl.querySelector('select') as HTMLSelectElement).value = size.toString();
       renderGrid();
-      updateStatus('Layout imported');
+      updateStatus('Level imported and normalized');
     } catch (error) {
       if (error instanceof Error) {
         updateStatus(`Import failed: ${error.message}`);
@@ -269,15 +281,10 @@ function createSidebarControls(): void {
   importWrapper.appendChild(importButton);
   sidebar.appendChild(importWrapper);
 
-  const exportButton = createButton('Copy Layout to Clipboard', () => {
-    copyToClipboard(serializeGrid(currentGrid));
-    updateStatus('Layout copied to clipboard');
-  }, 'secondary');
-  sidebar.appendChild(exportButton);
-
-  const exportJsonButton = createButton('Copy JSON Layout', () => {
-    copyToClipboard(toJsonLayout(currentGrid));
-    updateStatus('JSON layout copied to clipboard');
+  const exportJsonButton = createButton('Copy Level to Clipboard', () => {
+    const minMoves = getMinMoves(currentGrid);
+    copyToClipboard(toJsonLevel(currentGrid, minMoves ?? 0));
+    updateStatus('Level definition copied to clipboard');
   }, 'secondary');
   sidebar.appendChild(exportJsonButton);
 }

@@ -154,3 +154,59 @@ export function isSolvable(grid: GridState, moveLimit = 25): boolean {
 
   return dfs(grid, 0);
 }
+
+export function getMinMoves(grid: GridState, moveLimit = 25): number | null {
+  const totalTiles = countTiles(grid);
+  if (totalTiles <= 1) {
+    return 0;
+  }
+
+  const visited = new Set<string>();
+  let minMoves: number | null = null;
+
+  const dfs = (state: GridState, depth: number): void => {
+    const tilesRemaining = countTiles(state);
+    if (tilesRemaining <= 1) {
+      if (minMoves === null || depth < minMoves) {
+        minMoves = depth;
+      }
+      return;
+    }
+
+    if (depth >= moveLimit) {
+      return;
+    }
+
+    // Early pruning: if we already found a solution and current depth >= minMoves, stop
+    if (minMoves !== null && depth >= minMoves) {
+      return;
+    }
+
+    const hash = getHash(state);
+    if (visited.has(hash)) {
+      return;
+    }
+    visited.add(hash);
+
+    const moves = getLegalMoves(state);
+    if (moves.length === 0) {
+      return;
+    }
+
+    for (const move of moves) {
+      const { from, to } = move;
+      // dragging `from` onto `to`
+      const forward = applyMerge(state, from.x, from.y, to.x, to.y);
+      dfs(forward, depth + 1);
+
+      // dragging `to` onto `from`
+      const backward = applyMerge(state, to.x, to.y, from.x, from.y);
+      dfs(backward, depth + 1);
+    }
+
+    visited.delete(hash);
+  };
+
+  dfs(grid, 0);
+  return minMoves;
+}

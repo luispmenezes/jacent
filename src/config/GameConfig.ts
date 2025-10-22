@@ -14,6 +14,9 @@ export const GameConfig: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
+  render: {
+    pixelArt: true,
+  },
   physics: {
     default: 'arcade',
     arcade: {

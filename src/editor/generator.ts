@@ -63,7 +63,7 @@ function ensureAtLeastOneMergeablePair(grid: GridState): boolean {
 }
 
 export function generateLevel(options: GenerateOptions): GridState | null {
-  const { gridSize, tileCount, minValue = 1, maxValue = 6, maxAttempts = 300 } = options;
+  const { gridSize, tileCount, minValue = 1, maxValue = 7, maxAttempts = 300 } = options;
   if (tileCount <= 0 || tileCount > gridSize * gridSize) {
     return null;
   }
@@ -81,7 +81,7 @@ export function generateLevel(options: GenerateOptions): GridState | null {
     }
 
     if (isSolvable(seeded)) {
-      return seeded;
+      return normalizeTileValues(seeded);
     }
   }
 
@@ -94,9 +94,87 @@ export function serializeGrid(grid: GridState): string {
     .join('\n');
 }
 
+export function normalizeTileValues(grid: GridState): GridState {
+  // Collect all unique non-null tile values
+  const uniqueValues = new Set<number>();
+  for (const row of grid) {
+    for (const cell of row) {
+      if (cell !== null) {
+        uniqueValues.add(cell);
+      }
+    }
+  }
+
+  // If no tiles or already using consecutive values starting from 1, return as-is
+  const sortedValues = Array.from(uniqueValues).sort((a, b) => a - b);
+  if (sortedValues.length === 0) {
+    return grid;
+  }
+
+  // Check if already normalized (consecutive from 1)
+  const isAlreadyNormalized = sortedValues.every((value, index) => value === index + 1);
+  if (isAlreadyNormalized) {
+    return grid;
+  }
+
+  // Create mapping from old values to new consecutive values starting from 1
+  const valueMap = new Map<number, number>();
+  sortedValues.forEach((oldValue, index) => {
+    valueMap.set(oldValue, index + 1);
+  });
+
+  // Apply mapping to create normalized grid
+  return grid.map((row) =>
+    row.map((cell) => (cell === null ? null : valueMap.get(cell)!))
+  );
+}
+
 export function deserializeGrid(input: string): GridState {
-  const rows = input
-    .trim()
+  const trimmed = input.trim();
+
+  // Try to parse as JSON first
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+
+      // Check if it's a level definition object with layout property
+      if (parsed && typeof parsed === 'object' && 'layout' in parsed) {
+        const layout = parsed.layout;
+        if (Array.isArray(layout) && Array.isArray(layout[0])) {
+          const size = layout.length;
+          // Validate it's a square grid
+          for (const row of layout) {
+            if (row.length !== size) {
+              throw new Error('Grid must be square when importing');
+            }
+          }
+          return layout as GridState;
+        }
+      }
+
+      // Check if it's just a grid array
+      if (Array.isArray(parsed) && Array.isArray(parsed[0])) {
+        const size = parsed.length;
+        // Validate it's a square grid
+        for (const row of parsed) {
+          if (row.length !== size) {
+            throw new Error('Grid must be square when importing');
+          }
+        }
+        return parsed as GridState;
+      }
+
+      throw new Error('Invalid JSON format');
+    } catch (e) {
+      if (e instanceof Error) {
+        throw e;
+      }
+      throw new Error('Invalid JSON format');
+    }
+  }
+
+  // Fall back to space-separated format
+  const rows = trimmed
     .split(/\r?\n/)
     .map((line) =>
       line

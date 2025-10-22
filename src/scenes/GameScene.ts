@@ -33,6 +33,7 @@ export class GameScene extends Phaser.Scene {
   private gridBounds: { top: number; bottom: number; left: number; right: number } | null = null;
   private initialStageIndex: number = 0;
   private initialLevelIndex: number = 0;
+  private emptyTiles: Phaser.GameObjects.Sprite[] = [];
 
   constructor() {
     super({ key: 'GameScene' });
@@ -56,6 +57,7 @@ export class GameScene extends Phaser.Scene {
     this.currentStageIndex = this.initialStageIndex;
     this.currentLevelIndex = this.initialLevelIndex;
     this.grid = null;
+    this.emptyTiles = [];
 
     this.createBackground();
     this.createUI();
@@ -290,6 +292,21 @@ export class GameScene extends Phaser.Scene {
       const tileSize = this.getTileSizeForGrid(gridSize);
       const { x: centerGridX, y: centerGridY } = this.getGridCenter();
       grid.updateLayout({ tileSize, centerX: centerGridX, centerY: centerGridY });
+
+      // Update empty tile positions and scale
+      let emptyIndex = 0;
+      for (let y = 0; y < gridSize; y++) {
+        for (let x = 0; x < gridSize; x++) {
+          if (emptyIndex < this.emptyTiles.length) {
+            const pos = grid.getWorldPosition(x, y);
+            const emptyTile = this.emptyTiles[emptyIndex];
+            emptyTile.setPosition(pos.x, pos.y);
+            const targetScale = tileSize / 24; // 24 is the source sprite size
+            emptyTile.setScale(targetScale);
+            emptyIndex++;
+          }
+        }
+      }
     }
   }
 
@@ -315,12 +332,28 @@ export class GameScene extends Phaser.Scene {
       this.grid = null;
     }
 
+    // Clear old empty tile sprites
+    this.emptyTiles.forEach((sprite) => sprite.destroy());
+    this.emptyTiles = [];
+
     this.layoutUI();
 
     const tileSize = this.getTileSizeForGrid(level.gridSize);
     const { x: centerGridX, y: centerGridY } = this.getGridCenter();
     const grid = new Grid(this, level.gridSize, tileSize, { x: centerGridX, y: centerGridY });
     this.grid = grid;
+
+    // Add empty tile backgrounds for all grid positions
+    for (let y = 0; y < level.gridSize; y++) {
+      for (let x = 0; x < level.gridSize; x++) {
+        const pos = grid.getWorldPosition(x, y);
+        const emptyTile = this.add.sprite(pos.x, pos.y, 'tile-empty');
+        const targetScale = tileSize / emptyTile.width;
+        emptyTile.setScale(targetScale);
+        emptyTile.setDepth(-1); // Behind numbered tiles
+        this.emptyTiles.push(emptyTile);
+      }
+    }
 
     let index = 0;
     for (let y = 0; y < level.gridSize; y++) {
@@ -380,14 +413,9 @@ export class GameScene extends Phaser.Scene {
     const availableWidth = this.gridBounds.right - this.gridBounds.left;
     const availableHeight = this.gridBounds.bottom - this.gridBounds.top;
 
-    // Calculate tile size with gaps (8% of tile size as gap between tiles)
-    // Total space needed = (gridSize * tileSize) + ((gridSize - 1) * gap)
-    // where gap = tileSize * 0.08
-    // So: space = tileSize * (gridSize + (gridSize - 1) * 0.08)
-    // Therefore: tileSize = space / (gridSize + (gridSize - 1) * 0.08)
-    const gapFactor = 0.08;
-    const widthSize = availableWidth / (gridSize + (gridSize - 1) * gapFactor);
-    const heightSize = availableHeight / (gridSize + (gridSize - 1) * gapFactor);
+    // Calculate tile size (no gaps - sprites have built-in borders)
+    const widthSize = availableWidth / gridSize;
+    const heightSize = availableHeight / gridSize;
 
     const size = Math.floor(Math.min(widthSize, heightSize));
 
@@ -452,7 +480,6 @@ export class GameScene extends Phaser.Scene {
     // Calculate merge range based on current grid size and tile spacing
     const gridSize = grid.getGridSize();
     const tileSize = this.getTileSizeForGrid(gridSize);
-    const gap = tileSize * 0.08;
     const mergeRange = tileSize * 0.6; // 60% of tile size
 
     for (const tile of allTiles) {
@@ -601,96 +628,226 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private showModal(
+    message: string,
+    buttons?: Array<{ text: string; callback: () => void; primary?: boolean }>,
+    autoDismiss?: { delay: number; callback?: () => void }
+  ): void {
+    const cam = this.cameras.main;
+    const modalElements: Phaser.GameObjects.GameObject[] = [];
+
+    // Create semi-transparent overlay
+    const overlay = this.add.rectangle(cam.centerX, cam.centerY, cam.width, cam.height, 0x000000, 0.6);
+    overlay.setDepth(1000);
+    overlay.setScrollFactor(0);
+    overlay.setAlpha(0);
+    modalElements.push(overlay);
+
+    // Create modal panel with rounded appearance
+    const panelWidth = Math.min(cam.width * 0.85, 450);
+    const panelHeight = buttons ? Math.min(cam.height * 0.5, 400) : Math.min(cam.height * 0.35, 280);
+    const panel = this.add.rectangle(cam.centerX, cam.centerY, panelWidth, panelHeight, 0xffffff);
+    panel.setDepth(1001);
+    panel.setScrollFactor(0);
+    panel.setStrokeStyle(3, 0xdddddd);
+    panel.setAlpha(0);
+    modalElements.push(panel);
+
+    // Add subtle shadow effect with multiple layers
+    const shadow1 = this.add.rectangle(cam.centerX + 2, cam.centerY + 2, panelWidth, panelHeight, 0x000000, 0.1);
+    shadow1.setDepth(1000.5);
+    shadow1.setScrollFactor(0);
+    shadow1.setAlpha(0);
+    modalElements.push(shadow1);
+
+    // Create message text with better spacing
+    const fontSize = Phaser.Math.Clamp(Math.round(cam.width * 0.07), 24, 48);
+    const textY = buttons ? cam.centerY - panelHeight * 0.15 : cam.centerY;
+    const text = this.add.text(cam.centerX, textY, message, {
+      fontSize: `${fontSize}px`,
+      color: '#222222',
+      fontFamily: 'Arial',
+      fontStyle: 'normal',
+      align: 'center',
+      lineSpacing: 8,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(1002);
+    text.setScrollFactor(0);
+    text.setAlpha(0);
+    modalElements.push(text);
+
+    // Create buttons if provided
+    if (buttons && buttons.length > 0) {
+      const buttonWidth = Math.min(panelWidth * 0.7, 280);
+      const buttonHeight = 50;
+      const buttonSpacing = 16;
+      const buttonFontSize = Phaser.Math.Clamp(Math.round(cam.width * 0.04), 16, 22);
+      const startY = cam.centerY + panelHeight * 0.15;
+
+      buttons.forEach((buttonConfig, index) => {
+        const buttonY = startY + index * (buttonHeight + buttonSpacing);
+        const isPrimary = buttonConfig.primary ?? false;
+
+        // Button background
+        const buttonBg = this.add.rectangle(
+          cam.centerX,
+          buttonY,
+          buttonWidth,
+          buttonHeight,
+          isPrimary ? 0x222222 : 0xf5f5f5
+        );
+        buttonBg.setDepth(1002);
+        buttonBg.setScrollFactor(0);
+        buttonBg.setStrokeStyle(2, isPrimary ? 0x222222 : 0xcccccc);
+        buttonBg.setAlpha(0);
+        buttonBg.setInteractive({ useHandCursor: true });
+        modalElements.push(buttonBg);
+
+        // Button text
+        const buttonText = this.add.text(cam.centerX, buttonY, buttonConfig.text, {
+          fontSize: `${buttonFontSize}px`,
+          color: isPrimary ? '#ffffff' : '#222222',
+          fontFamily: 'Arial',
+          fontStyle: 'normal',
+        });
+        buttonText.setOrigin(0.5);
+        buttonText.setDepth(1003);
+        buttonText.setScrollFactor(0);
+        buttonText.setAlpha(0);
+        modalElements.push(buttonText);
+
+        // Button hover effects
+        buttonBg.on('pointerover', () => {
+          buttonBg.setFillStyle(isPrimary ? 0x333333 : 0xe8e8e8);
+          buttonBg.setScale(1.02);
+        });
+
+        buttonBg.on('pointerout', () => {
+          buttonBg.setFillStyle(isPrimary ? 0x222222 : 0xf5f5f5);
+          buttonBg.setScale(1);
+        });
+
+        buttonBg.on('pointerdown', () => {
+          buttonBg.setScale(0.98);
+          this.sound.play('click01');
+        });
+
+        buttonBg.on('pointerup', () => {
+          buttonBg.setScale(1);
+          this.sound.play('click02');
+
+          // Dismiss modal and execute callback
+          this.tweens.add({
+            targets: modalElements,
+            alpha: 0,
+            scale: 0.95,
+            duration: 250,
+            ease: 'Power2',
+            onComplete: () => {
+              modalElements.forEach((el) => el.destroy());
+              buttonConfig.callback();
+            },
+          });
+        });
+      });
+    }
+
+    // Fade in animation
+    this.tweens.add({
+      targets: overlay,
+      alpha: 0.6,
+      duration: 300,
+      ease: 'Power2',
+    });
+
+    this.tweens.add({
+      targets: modalElements.filter((el) => el !== overlay),
+      alpha: 1,
+      scale: 1,
+      duration: 400,
+      ease: 'Back.easeOut',
+    });
+
+    // Auto-dismiss if configured and no buttons
+    if (autoDismiss && !buttons) {
+      this.time.delayedCall(autoDismiss.delay, () => {
+        this.tweens.add({
+          targets: modalElements,
+          alpha: 0,
+          duration: 300,
+          ease: 'Power2',
+          onComplete: () => {
+            modalElements.forEach((el) => el.destroy());
+            if (autoDismiss.callback) {
+              autoDismiss.callback();
+            }
+          },
+        });
+      });
+    }
+  }
+
   private handleWin(): void {
     this.gameActive = false;
     this.sound.play('success1');
     this.undoStack = [];
     this.updateUndoButton();
 
-    const grade = this.moves <= this.par ? 'Perfect' : this.moves <= this.par + 2 ? 'Great' : 'Complete';
-    const gradeColor = '#222222'; // Minimalist - same color for all
+    const grade = this.moves <= this.par ? 'Perfect!' : this.moves <= this.par + 2 ? 'Great!' : 'Complete!';
 
     const currentStage = this.stages[this.currentStageIndex];
     const isFinalLevelInStage = this.currentLevelIndex >= currentStage.levels.length - 1;
     const isFinalStage = this.currentStageIndex >= this.stages.length - 1;
     const gameComplete = isFinalLevelInStage && isFinalStage;
 
-    let nextLevelText: string;
+    const message = `${grade}\n\n${this.moves}/${this.par} moves`;
+
+    const buttons = [];
+
     if (gameComplete) {
-      nextLevelText = `${currentStage.name} complete`;
-    } else if (isFinalLevelInStage) {
-      nextLevelText = `${currentStage.name} complete`;
+      // Game fully complete - only show play again
+      buttons.push({
+        text: 'Play Again',
+        callback: () => this.restartGame(),
+        primary: true,
+      });
     } else {
-      nextLevelText = `Level ${this.currentLevelIndex + 2}`;
+      // Show continue button (primary) and play again button
+      buttons.push({
+        text: isFinalLevelInStage ? 'Next Stage' : 'Continue',
+        callback: () => {
+          if (isFinalLevelInStage) {
+            this.currentStageIndex++;
+            this.startLevel(0);
+          } else {
+            this.startLevel(this.currentLevelIndex + 1);
+          }
+        },
+        primary: true,
+      });
+
+      buttons.push({
+        text: 'Play Again',
+        callback: () => this.restartGame(),
+        primary: false,
+      });
     }
 
-    const cam = this.cameras.main;
-    const winFontSize = Phaser.Math.Clamp(Math.round(cam.width * 0.08), 28, 56);
-    const winText = this.add.text(
-      cam.centerX,
-      cam.centerY,
-      `${grade}\n\n${this.moves}/${this.par}\n\n${nextLevelText}`,
-      {
-        fontSize: `${winFontSize}px`,
-        color: gradeColor,
-        fontFamily: 'Arial',
-        fontStyle: 'normal',
-        align: 'center',
-      }
-    );
-    winText.setOrigin(0.5);
-    winText.setAlpha(0);
-
-    this.tweens.add({
-      targets: winText,
-      alpha: 1,
-      scale: 1.2,
-      duration: 500,
-      ease: 'Back.easeOut',
-    });
-
-    const delay = isFinalLevelInStage ? 2000 : 1200;
-
-    this.time.delayedCall(delay, () => {
-      winText.destroy();
-
-      if (gameComplete) {
-        this.showCompletionBanner(currentStage.name);
-        return;
-      }
-
-      if (isFinalLevelInStage) {
-        this.currentStageIndex++;
-        this.startLevel(0);
-        return;
-      }
-
-      this.startLevel(this.currentLevelIndex + 1);
-    });
+    this.showModal(message, buttons);
   }
 
   private handleGameOver(): void {
     this.gameActive = false;
     this.sound.play('wrong');
 
-    const cam = this.cameras.main;
-    const gameOverFont = Phaser.Math.Clamp(Math.round(cam.width * 0.07), 24, 48);
-    const gameOverText = this.add.text(cam.centerX, cam.centerY, 'No moves left', {
-      fontSize: `${gameOverFont}px`,
-      color: '#666666',
-      fontFamily: 'Arial',
-      fontStyle: 'normal',
-      align: 'center',
-    });
-    gameOverText.setOrigin(0.5);
-    gameOverText.setAlpha(0);
-
-    this.tweens.add({
-      targets: gameOverText,
-      alpha: 1,
-      duration: 500,
-      ease: 'Power2',
-    });
+    this.showModal('No moves left!', [
+      {
+        text: 'Try Again',
+        callback: () => this.restartGame(),
+        primary: true,
+      },
+    ]);
   }
 
   private restartGame(): void {
@@ -723,23 +880,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showCompletionBanner(stageName: string): void {
-    const cam = this.cameras.main;
-    const bannerFontSize = Phaser.Math.Clamp(Math.round(cam.width * 0.08), 28, 52);
-    const completeText = this.add.text(cam.centerX, cam.centerY, `${stageName} complete`, {
-      fontSize: `${bannerFontSize}px`,
-      color: '#222222',
-      fontFamily: 'Arial',
-      fontStyle: 'normal',
-      align: 'center',
-    });
-    completeText.setOrigin(0.5);
-    completeText.setAlpha(0);
-
-    this.tweens.add({
-      targets: completeText,
-      alpha: 1,
-      duration: 500,
-      ease: 'Power2',
-    });
+    this.showModal(`${stageName} complete`, undefined, { delay: 3000 });
   }
 }

@@ -10,7 +10,7 @@ export class Grid {
   private tiles: (Tile | null)[][];
   private centerX: number;
   private centerY: number;
-  private readonly gapFactor: number = 0.08; // 8% gap between tiles
+  private readonly gapFactor: number = 0; // No gap - sprites have built-in borders
 
   constructor(
     scene: Phaser.Scene,
