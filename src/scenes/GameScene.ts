@@ -74,9 +74,13 @@ export class GameScene extends Phaser.Scene {
     this.createUI();
     this.createGrid();
 
+    // Add Escape key listener for pause menu
+    this.input.keyboard?.on('keydown-ESC', this.showPauseMenu, this);
+
     this.scale.on('resize', this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', this.handleResize, this);
+      this.input.keyboard?.off('keydown-ESC', this.showPauseMenu, this);
     });
   }
 
@@ -261,18 +265,24 @@ export class GameScene extends Phaser.Scene {
     this.titleText.setFontSize(titleSize);
     this.titleText.setPosition(centerX, safePadding + titleSize / 2);
 
-    // Moves counter on left
+    // Moves counter on left (hidden in endless mode)
     this.movesText.setFontSize(valueSize);
     this.movesText.setOrigin(0, 0);
     this.movesText.setPosition(safePadding, this.titleText.y + titleSize / 2 + safePadding * 0.8);
 
-    // Par text right next to moves
-    this.parText.setFontSize(smallSize);
-    this.parText.setOrigin(0, 1);
-    this.parText.setPosition(
-      this.movesText.x + this.movesText.displayWidth + 2,
-      this.movesText.y + this.movesText.displayHeight
-    );
+    // Par text - shows score in endless mode, par in normal mode
+    if (this.isEndless) {
+      this.parText.setFontSize(smallSize);
+      this.parText.setOrigin(0, 0);
+      this.parText.setPosition(safePadding, this.titleText.y + titleSize / 2 + safePadding * 0.8);
+    } else {
+      this.parText.setFontSize(smallSize);
+      this.parText.setOrigin(0, 1);
+      this.parText.setPosition(
+        this.movesText.x + this.movesText.displayWidth + 2,
+        this.movesText.y + this.movesText.displayHeight
+      );
+    }
 
     // Buttons on the right side
     this.undoButton.setOrigin(1, 0);
@@ -303,15 +313,18 @@ export class GameScene extends Phaser.Scene {
 
     if (this.grid) {
       const grid = this.grid;
-      const gridSize = grid.getGridSize();
-      const tileSize = this.getTileSizeForGrid(gridSize);
+      const gridWidth = grid.getGridWidth();
+      const gridHeight = grid.getGridHeight();
+      const tileSize = this.isEndless
+        ? this.getTileSizeForEndlessGrid(gridWidth, gridHeight)
+        : this.getTileSizeForGrid(grid.getGridSize());
       const { x: centerGridX, y: centerGridY } = this.getGridCenter();
       grid.updateLayout({ tileSize, centerX: centerGridX, centerY: centerGridY });
 
       // Update empty tile positions and scale
       let emptyIndex = 0;
-      for (let y = 0; y < gridSize; y++) {
-        for (let x = 0; x < gridSize; x++) {
+      for (let y = 0; y < gridHeight; y++) {
+        for (let x = 0; x < gridWidth; x++) {
           if (emptyIndex < this.emptyTiles.length) {
             const pos = grid.getWorldPosition(x, y);
             const emptyTile = this.emptyTiles[emptyIndex];
@@ -347,15 +360,16 @@ export class GameScene extends Phaser.Scene {
 
     this.layoutUI();
 
-    const gridSize = 4; // Always 4x4 for endless mode
-    const tileSize = this.getTileSizeForGrid(gridSize);
+    const gridWidth = 4;
+    const gridHeight = 8;
+    const tileSize = this.getTileSizeForEndlessGrid(gridWidth, gridHeight);
     const { x: centerGridX, y: centerGridY } = this.getGridCenter();
-    const grid = new Grid(this, gridSize, tileSize, { x: centerGridX, y: centerGridY });
+    const grid = new Grid(this, gridWidth, tileSize, { x: centerGridX, y: centerGridY }, gridHeight);
     this.grid = grid;
 
     // Add empty tile backgrounds for all grid positions
-    for (let y = 0; y < gridSize; y++) {
-      for (let x = 0; x < gridSize; x++) {
+    for (let y = 0; y < gridHeight; y++) {
+      for (let x = 0; x < gridWidth; x++) {
         const pos = grid.getWorldPosition(x, y);
         const emptyTile = this.add.sprite(pos.x, pos.y, 'tile-empty');
         const targetScale = tileSize / emptyTile.width;
@@ -365,64 +379,109 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Generate random initial tiles
-    this.generateInitialEndlessTiles(grid, gridSize, tileSize);
+    // Generate random initial tiles with guaranteed valid moves
+    this.generateInitialEndlessTiles(grid, gridWidth, gridHeight, tileSize);
 
     this.input.setDraggable(grid.getAllTiles());
     this.updateUndoButton();
     this.updateUI();
   }
 
-  private generateInitialEndlessTiles(grid: Grid, gridSize: number, tileSize: number): void {
-    // Start with ~8-10 random tiles in a 4x4 grid
-    const numInitialTiles = Phaser.Math.Between(8, 10);
-    const positions: { x: number; y: number }[] = [];
+  private generateInitialEndlessTiles(grid: Grid, gridWidth: number, gridHeight: number, tileSize: number): void {
+    let validMoves = 0;
+    let attempts = 0;
+    const maxAttempts = 100;
 
-    // Generate all possible positions
-    for (let y = 0; y < gridSize; y++) {
-      for (let x = 0; x < gridSize; x++) {
-        positions.push({ x, y });
+    // Keep generating until we have at least 2 valid moves
+    while (validMoves < 2 && attempts < maxAttempts) {
+      attempts++;
+      grid.clear();
+
+      // Start with 12-16 random tiles in the 8x4 grid
+      const numInitialTiles = Phaser.Math.Between(12, 16);
+      const positions: { x: number; y: number }[] = [];
+
+      // Generate all possible positions
+      for (let y = 0; y < gridHeight; y++) {
+        for (let x = 0; x < gridWidth; x++) {
+          positions.push({ x, y });
+        }
+      }
+
+      // Shuffle positions
+      Phaser.Utils.Array.Shuffle(positions);
+
+      // Create tiles at random positions
+      for (let i = 0; i < numInitialTiles; i++) {
+        const pos = positions[i];
+        const digit = Phaser.Math.Between(1, 5); // Random digit between 1 and 5
+        const worldPos = grid.getWorldPosition(pos.x, pos.y);
+        const tile = new Tile(this, worldPos.x, worldPos.y, digit, pos.x, pos.y);
+
+        const targetScale = tileSize / tile.width;
+
+        tile.on('dragstart', () => {
+          this.handleTileDragStart(tile);
+        });
+
+        tile.on('drag', () => {
+          this.handleTileDrag(tile);
+        });
+
+        tile.on('drop', (droppedTile: Tile) => {
+          this.handleTileDrop(droppedTile);
+        });
+
+        grid.addTile(tile, pos.x, pos.y);
+
+        // Add entrance animation
+        tile.setAlpha(0);
+        tile.setScale(0);
+        this.tweens.add({
+          targets: tile,
+          alpha: 1,
+          scale: targetScale,
+          duration: 300,
+          delay: i * 20,
+          ease: 'Back.easeOut',
+        });
+      }
+
+      // Count valid moves
+      validMoves = this.countValidMoves(grid);
+    }
+  }
+
+  private countValidMoves(grid: Grid): number {
+    const allTiles = grid.getAllTiles();
+    let moveCount = 0;
+
+    for (let i = 0; i < allTiles.length; i++) {
+      for (let j = i + 1; j < allTiles.length; j++) {
+        if (grid.canMerge(allTiles[i], allTiles[j])) {
+          moveCount++;
+        }
       }
     }
 
-    // Shuffle positions
-    Phaser.Utils.Array.Shuffle(positions);
+    return moveCount;
+  }
 
-    // Create tiles at random positions
-    for (let i = 0; i < numInitialTiles; i++) {
-      const pos = positions[i];
-      const digit = Phaser.Math.Between(1, 5); // Random digit between 1 and 5
-      const worldPos = grid.getWorldPosition(pos.x, pos.y);
-      const tile = new Tile(this, worldPos.x, worldPos.y, digit, pos.x, pos.y);
-
-      const targetScale = tileSize / tile.width;
-
-      tile.on('dragstart', () => {
-        this.handleTileDragStart(tile);
-      });
-
-      tile.on('drag', () => {
-        this.handleTileDrag(tile);
-      });
-
-      tile.on('drop', (droppedTile: Tile) => {
-        this.handleTileDrop(droppedTile);
-      });
-
-      grid.addTile(tile, pos.x, pos.y);
-
-      // Add entrance animation
-      tile.setAlpha(0);
-      tile.setScale(0);
-      this.tweens.add({
-        targets: tile,
-        alpha: 1,
-        scale: targetScale,
-        duration: 300,
-        delay: i * 20,
-        ease: 'Back.easeOut',
-      });
+  private getTileSizeForEndlessGrid(gridWidth: number, gridHeight: number): number {
+    if (!this.gridBounds) {
+      const cam = this.cameras.main;
+      return Math.floor(Math.min(cam.width / (gridWidth + 1), cam.height / (gridHeight + 1)));
     }
+
+    const availableWidth = this.gridBounds.right - this.gridBounds.left;
+    const availableHeight = this.gridBounds.bottom - this.gridBounds.top;
+
+    const widthSize = availableWidth / gridWidth;
+    const heightSize = availableHeight / gridHeight;
+
+    const size = Math.floor(Math.min(widthSize, heightSize));
+
+    return Phaser.Math.Clamp(size, 40, 140);
   }
 
   private startLevel(levelIndex: number): void {
@@ -616,13 +675,14 @@ export class GameScene extends Phaser.Scene {
 
     if (targetTile && grid.canMerge(droppedTile, targetTile)) {
       // Legal merge!
-      const mergedValue = droppedTile.digit;
       grid.mergeTiles(droppedTile, targetTile);
       this.moves++;
 
-      // Update score in endless mode
+      // Update score in endless mode with progressive scoring
       if (this.isEndless) {
-        this.score += mergedValue;
+        // Score increases as you make more moves: floor(moves/10) + 1
+        const multiplier = Math.floor(this.moves / 10) + 1;
+        this.score += multiplier;
       }
 
       this.sound.play('right');
@@ -740,10 +800,14 @@ export class GameScene extends Phaser.Scene {
 
   private updateUI(): void {
     if (this.isEndless) {
-      this.movesText.setText(this.moves.toString());
+      // Hide moves, only show score
+      this.movesText.setVisible(false);
+      this.parText.setVisible(true);
       this.parText.setText(`Score: ${this.score}`);
-      this.movesText.setColor('#222222');
+      this.parText.setOrigin(0, 0);
     } else {
+      this.movesText.setVisible(true);
+      this.parText.setVisible(true);
       this.movesText.setText(this.moves.toString());
 
       // Subtle color feedback based on par (very minimal)
@@ -760,13 +824,14 @@ export class GameScene extends Phaser.Scene {
   private spawnNewTileInEndlessMode(): void {
     if (!this.grid) return;
 
-    const gridSize = this.grid.getGridSize();
+    const gridWidth = this.grid.getGridWidth();
+    const gridHeight = this.grid.getGridHeight();
 
     // Find all empty positions
     const emptyPositions: { x: number; y: number }[] = [];
 
-    for (let y = 0; y < gridSize; y++) {
-      for (let x = 0; x < gridSize; x++) {
+    for (let y = 0; y < gridHeight; y++) {
+      for (let x = 0; x < gridWidth; x++) {
         if (!this.grid.isOccupied(x, y)) {
           emptyPositions.push({ x, y });
         }
@@ -786,13 +851,13 @@ export class GameScene extends Phaser.Scene {
     if (x > 0 && this.grid.isOccupied(x - 1, y)) {
       neighbors.push(this.grid.getTile(x - 1, y)!.digit);
     }
-    if (x < gridSize - 1 && this.grid.isOccupied(x + 1, y)) {
+    if (x < gridWidth - 1 && this.grid.isOccupied(x + 1, y)) {
       neighbors.push(this.grid.getTile(x + 1, y)!.digit);
     }
     if (y > 0 && this.grid.isOccupied(x, y - 1)) {
       neighbors.push(this.grid.getTile(x, y - 1)!.digit);
     }
-    if (y < gridSize - 1 && this.grid.isOccupied(x, y + 1)) {
+    if (y < gridHeight - 1 && this.grid.isOccupied(x, y + 1)) {
       neighbors.push(this.grid.getTile(x, y + 1)!.digit);
     }
 
@@ -813,7 +878,7 @@ export class GameScene extends Phaser.Scene {
     }
     const worldPos = this.grid.getWorldPosition(spawnPos.x, spawnPos.y);
 
-    const tileSize = this.getTileSizeForGrid(gridSize);
+    const tileSize = this.getTileSizeForEndlessGrid(gridWidth, gridHeight);
     const tile = new Tile(this, worldPos.x, worldPos.y, digit, spawnPos.x, spawnPos.y);
 
     const targetScale = tileSize / tile.width;
@@ -860,6 +925,31 @@ export class GameScene extends Phaser.Scene {
         this.handleGameOver();
       }
     }
+  }
+
+  private showPauseMenu(): void {
+    if (!this.gameActive) return; // Don't pause if game is already over
+
+    // Pause the game
+    const wasPaused = this.gameActive;
+    this.gameActive = false;
+
+    this.showModal('Paused', [
+      {
+        text: 'Resume',
+        callback: () => {
+          this.gameActive = wasPaused;
+        },
+        primary: true,
+      },
+      {
+        text: 'Menu',
+        callback: () => {
+          this.scene.start('MenuScene');
+        },
+        primary: false,
+      },
+    ]);
   }
 
   private showModal(
@@ -1076,7 +1166,7 @@ export class GameScene extends Phaser.Scene {
     this.sound.play('wrong');
 
     const message = this.isEndless
-      ? `Game Over!\n\nScore: ${this.score}\nMoves: ${this.moves}`
+      ? `Game Over!\n\nFinal Score: ${this.score}`
       : 'No moves left!';
 
     const buttons = [
@@ -1130,9 +1220,5 @@ export class GameScene extends Phaser.Scene {
     const height = gameSize?.height ?? this.scale.height;
     this.cameras.resize(width, height);
     this.layoutUI();
-  }
-
-  private showCompletionBanner(stageName: string): void {
-    this.showModal(`${stageName} complete`, undefined, { delay: 3000 });
   }
 }

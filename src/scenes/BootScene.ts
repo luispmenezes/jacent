@@ -79,15 +79,19 @@ export class BootScene extends Phaser.Scene {
       const frameIndex = i - 1; // Spritesheet frames are 0-indexed
       const frame = tilesTexture.get(frameIndex);
       const canvas = this.textures.createCanvas(`tile-${i}`, frame.width, frame.height);
-      canvas.drawFrame('tiles-sheet', frameIndex);
-      canvas.update();
+      if (canvas) {
+        canvas.drawFrame('tiles-sheet', frameIndex);
+        canvas.update();
+      }
     }
 
     // Extract frame 8 (index 7) for empty grid squares
     const emptyFrame = tilesTexture.get(7);
     const emptyCanvas = this.textures.createCanvas('tile-empty', emptyFrame.width, emptyFrame.height);
-    emptyCanvas.drawFrame('tiles-sheet', 7);
-    emptyCanvas.update();
+    if (emptyCanvas) {
+      emptyCanvas.drawFrame('tiles-sheet', 7);
+      emptyCanvas.update();
+    }
 
     this.scene.start('MenuScene');
   }

@@ -1,5 +1,5 @@
-import './editor.css';
-import { createEmptyGrid, deserializeGrid, generateLevel, normalizeTileValues, serializeGrid } from './generator';
+import './styles/editor.css';
+import { createEmptyGrid, deserializeGrid, generateLevel, normalizeTileValues } from './generator';
 import { GridState, isSolvable, getMinMoves } from './solver';
 
 const MIN_GRID_SIZE = 2;

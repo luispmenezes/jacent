@@ -4,6 +4,8 @@ import { Tile } from './Tile';
 export class Grid {
   private readonly scene: Phaser.Scene;
   private gridSize: number;
+  private gridWidth: number;
+  private gridHeight: number;
   private tileSize: number;
   private startX: number = 0;
   private startY: number = 0;
@@ -16,10 +18,13 @@ export class Grid {
     scene: Phaser.Scene,
     gridSize: number = 3,
     tileSize: number = 100,
-    center?: { x: number; y: number }
+    center?: { x: number; y: number },
+    gridHeight?: number
   ) {
     this.scene = scene;
     this.gridSize = gridSize;
+    this.gridWidth = gridSize;
+    this.gridHeight = gridHeight ?? gridSize;
     this.tileSize = tileSize;
 
     // Calculate center position
@@ -29,9 +34,9 @@ export class Grid {
     this.recalculateStartPosition();
 
     // Initialize empty grid
-    this.tiles = Array(gridSize)
+    this.tiles = Array(this.gridHeight)
       .fill(null)
-      .map(() => Array(gridSize).fill(null));
+      .map(() => Array(this.gridWidth).fill(null));
   }
 
   public getWorldPosition(gridX: number, gridY: number): { x: number; y: number } {
@@ -48,7 +53,7 @@ export class Grid {
     const gridX = Math.floor((worldX - this.startX + spacing / 2) / spacing);
     const gridY = Math.floor((worldY - this.startY + spacing / 2) / spacing);
 
-    if (gridX >= 0 && gridX < this.gridSize && gridY >= 0 && gridY < this.gridSize) {
+    if (gridX >= 0 && gridX < this.gridWidth && gridY >= 0 && gridY < this.gridHeight) {
       return { gridX, gridY };
     }
 
@@ -80,7 +85,7 @@ export class Grid {
   }
 
   public isValidPosition(gridX: number, gridY: number): boolean {
-    return gridX >= 0 && gridX < this.gridSize && gridY >= 0 && gridY < this.gridSize;
+    return gridX >= 0 && gridX < this.gridWidth && gridY >= 0 && gridY < this.gridHeight;
   }
 
   public isOccupied(gridX: number, gridY: number): boolean {
@@ -140,8 +145,8 @@ export class Grid {
 
   public getAllTiles(): Tile[] {
     const allTiles: Tile[] = [];
-    for (let y = 0; y < this.gridSize; y++) {
-      for (let x = 0; x < this.gridSize; x++) {
+    for (let y = 0; y < this.gridHeight; y++) {
+      for (let x = 0; x < this.gridWidth; x++) {
         const tile = this.tiles[y][x];
         if (tile) {
           allTiles.push(tile);
@@ -154,13 +159,21 @@ export class Grid {
   public clear(): void {
     const allTiles = this.getAllTiles();
     allTiles.forEach((tile) => tile.destroy());
-    this.tiles = Array(this.gridSize)
+    this.tiles = Array(this.gridHeight)
       .fill(null)
-      .map(() => Array(this.gridSize).fill(null));
+      .map(() => Array(this.gridWidth).fill(null));
   }
 
   public getGridSize(): number {
     return this.gridSize;
+  }
+
+  public getGridWidth(): number {
+    return this.gridWidth;
+  }
+
+  public getGridHeight(): number {
+    return this.gridHeight;
   }
 
   public updateLayout(params: { tileSize?: number; centerX?: number; centerY?: number }): void {
@@ -207,9 +220,9 @@ export class Grid {
 
   private recalculateStartPosition(): void {
     const gap = this.tileSize * this.gapFactor;
-    const spacing = this.tileSize + gap;
-    const totalGridSize = this.gridSize * this.tileSize + (this.gridSize - 1) * gap;
-    this.startX = this.centerX - totalGridSize / 2 + this.tileSize / 2;
-    this.startY = this.centerY - totalGridSize / 2 + this.tileSize / 2;
+    const totalGridWidth = this.gridWidth * this.tileSize + (this.gridWidth - 1) * gap;
+    const totalGridHeight = this.gridHeight * this.tileSize + (this.gridHeight - 1) * gap;
+    this.startX = this.centerX - totalGridWidth / 2 + this.tileSize / 2;
+    this.startY = this.centerY - totalGridHeight / 2 + this.tileSize / 2;
   }
 }

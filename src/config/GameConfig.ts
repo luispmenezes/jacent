@@ -3,6 +3,7 @@ import { BootScene } from '../scenes/BootScene';
 import { GameScene } from '../scenes/GameScene';
 import { MenuScene } from '../scenes/MenuScene';
 import { LevelSelectScene } from '../scenes/LevelSelectScene';
+import { HowToPlayScene } from '../scenes/HowToPlayScene';
 
 export const GameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -23,5 +24,5 @@ export const GameConfig: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, MenuScene, LevelSelectScene, GameScene],
+  scene: [BootScene, MenuScene, LevelSelectScene, HowToPlayScene, GameScene],
 };
