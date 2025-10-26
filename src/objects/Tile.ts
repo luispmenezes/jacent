@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { TileFrame } from '../config/AssetConfig';
 
 export class Tile extends Phaser.GameObjects.Sprite {
-  public digit: number;
+  public digit: number | 'W';
   public gridX: number;
   public gridY: number;
   private isDragging: boolean = false;
@@ -14,7 +14,7 @@ export class Tile extends Phaser.GameObjects.Sprite {
     scene: Phaser.Scene,
     x: number,
     y: number,
-    digit: number,
+    digit: number | 'W',
     gridX: number,
     gridY: number
   ) {
@@ -24,10 +24,15 @@ export class Tile extends Phaser.GameObjects.Sprite {
     this.gridY = gridY;
 
     scene.add.existing(this);
-    this.setInteractive({ draggable: true });
+
+    // Wildcards are non-draggable - they can only be merged into
+    const isWildcard = digit === 'W';
+    this.setInteractive({ draggable: !isWildcard });
     this.setOrigin(0.5, 0.5);
 
-    this.setupDragEvents();
+    if (!isWildcard) {
+      this.setupDragEvents();
+    }
   }
 
   private setupDragEvents(): void {
@@ -84,9 +89,13 @@ export class Tile extends Phaser.GameObjects.Sprite {
     });
   }
 
-  public setDigit(digit: number): void {
+  public setDigit(digit: number | 'W'): void {
     this.digit = digit;
     this.setTexture(`tile-${digit as TileFrame}`);
+  }
+
+  public isWildcard(): boolean {
+    return this.digit === 'W';
   }
 
   public isBeingDragged(): boolean {

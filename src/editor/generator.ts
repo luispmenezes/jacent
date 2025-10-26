@@ -1,6 +1,6 @@
 import { GridState, cloneGrid, countTiles, isSolvable } from './solver';
 
-type CellValue = number | null;
+type CellValue = number | 'W' | null;
 
 interface GenerateOptions {
   gridSize: number;
@@ -8,6 +8,7 @@ interface GenerateOptions {
   minValue?: number;
   maxValue?: number;
   maxAttempts?: number;
+  wildcardCount?: number;
 }
 
 export function createEmptyGrid(size: number): GridState {
@@ -18,7 +19,7 @@ function getRandomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function placeRandomTiles(grid: GridState, tileCount: number, minValue: number, maxValue: number): GridState {
+function placeRandomTiles(grid: GridState, tileCount: number, minValue: number, maxValue: number, wildcardCount: number = 0): GridState {
   const size = grid.length;
   const availablePositions = [] as Array<{ x: number; y: number }>;
 
@@ -29,7 +30,17 @@ function placeRandomTiles(grid: GridState, tileCount: number, minValue: number, 
   }
 
   const next = cloneGrid(grid);
-  for (let i = 0; i < tileCount && availablePositions.length > 0; i++) {
+
+  // Place wildcards first
+  for (let i = 0; i < wildcardCount && availablePositions.length > 0; i++) {
+    const index = getRandomInt(0, availablePositions.length - 1);
+    const { x, y } = availablePositions.splice(index, 1)[0];
+    next[y][x] = 'W';
+  }
+
+  // Place numbered tiles
+  const numericTiles = tileCount - wildcardCount;
+  for (let i = 0; i < numericTiles && availablePositions.length > 0; i++) {
     const index = getRandomInt(0, availablePositions.length - 1);
     const { x, y } = availablePositions.splice(index, 1)[0];
     next[y][x] = getRandomInt(minValue, maxValue);
@@ -43,7 +54,7 @@ function ensureAtLeastOneMergeablePair(grid: GridState): boolean {
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const value = grid[y][x];
-      if (value === null) continue;
+      if (value === null || value === 'W') continue; // Skip empty and wildcard cells
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
@@ -52,7 +63,8 @@ function ensureAtLeastOneMergeablePair(grid: GridState): boolean {
           if (ny < 0 || ny >= size || nx < 0 || nx >= size) continue;
           const neighbor = grid[ny][nx];
           if (neighbor === null) continue;
-          if (Math.abs(value - neighbor) === 1) {
+          // Wildcard matches any number, numbers need diff of 1
+          if (neighbor === 'W' || (typeof neighbor === 'number' && Math.abs(value - neighbor) === 1)) {
             return true;
           }
         }
@@ -63,14 +75,21 @@ function ensureAtLeastOneMergeablePair(grid: GridState): boolean {
 }
 
 export function generateLevel(options: GenerateOptions): GridState | null {
-  const { gridSize, tileCount, minValue = 1, maxValue = 7, maxAttempts = 300 } = options;
+  const { gridSize, tileCount, minValue = 1, maxValue = 7, maxAttempts = 300, wildcardCount = 0 } = options;
   if (tileCount <= 0 || tileCount > gridSize * gridSize) {
     return null;
   }
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  if (wildcardCount > tileCount) {
+    return null; // Can't have more wildcards than total tiles
+  }
+
+  // Reduce max attempts for larger boards to prevent long hangs
+  const adjustedMaxAttempts = gridSize >= 5 ? Math.min(maxAttempts, 100) : maxAttempts;
+
+  for (let attempt = 0; attempt < adjustedMaxAttempts; attempt++) {
     const base = createEmptyGrid(gridSize);
-    const seeded = placeRandomTiles(base, tileCount, minValue, maxValue);
+    const seeded = placeRandomTiles(base, tileCount, minValue, maxValue, wildcardCount);
 
     if (!ensureAtLeastOneMergeablePair(seeded)) {
       continue;
@@ -95,11 +114,11 @@ export function serializeGrid(grid: GridState): string {
 }
 
 export function normalizeTileValues(grid: GridState): GridState {
-  // Collect all unique non-null tile values
+  // Collect all unique non-null tile values (excluding wildcards)
   const uniqueValues = new Set<number>();
   for (const row of grid) {
     for (const cell of row) {
-      if (cell !== null) {
+      if (cell !== null && typeof cell === 'number') {
         uniqueValues.add(cell);
       }
     }
@@ -123,9 +142,13 @@ export function normalizeTileValues(grid: GridState): GridState {
     valueMap.set(oldValue, index + 1);
   });
 
-  // Apply mapping to create normalized grid
+  // Apply mapping to create normalized grid (preserve wildcards)
   return grid.map((row) =>
-    row.map((cell) => (cell === null ? null : valueMap.get(cell)!))
+    row.map((cell) => {
+      if (cell === null) return null;
+      if (cell === 'W') return 'W';
+      return valueMap.get(cell)!;
+    })
   );
 }
 

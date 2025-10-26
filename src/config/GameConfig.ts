@@ -24,5 +24,9 @@ export const GameConfig: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
+  audio: {
+    disableWebAudio: false,
+    noAudio: false,
+  },
   scene: [BootScene, MenuScene, LevelSelectScene, HowToPlayScene, GameScene],
 };

@@ -1,9 +1,12 @@
 import stage1 from './levels/stage1.json';
+import stage2 from './levels/stage2.json';
+
+export type CellValue = number | 'W' | null;
 
 export interface LevelDefinition {
   gridSize: number;
   par: number;
-  layout: (number | null)[][];
+  layout: CellValue[][];
 }
 
 export interface StageDefinition {
@@ -11,4 +14,7 @@ export interface StageDefinition {
   levels: LevelDefinition[];
 }
 
-export const stages: StageDefinition[] = [stage1 as StageDefinition];
+export const stages: StageDefinition[] = [
+  stage1 as StageDefinition,
+  stage2 as StageDefinition,
+];

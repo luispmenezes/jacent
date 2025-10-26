@@ -1,6 +1,7 @@
 import './styles/editor.css';
 import { createEmptyGrid, deserializeGrid, generateLevel, normalizeTileValues } from './generator';
 import { GridState, isSolvable, getMinMoves } from './solver';
+import { stages } from '../config/StageConfig';
 
 const MIN_GRID_SIZE = 2;
 const MAX_GRID_SIZE = 5;
@@ -10,6 +11,10 @@ let currentGrid: GridState = createEmptyGrid(3);
 let selectedCell: { x: number; y: number } | null = null;
 let tileSlider: HTMLInputElement | null = null;
 let tileSliderValueLabel: HTMLSpanElement | null = null;
+let wildcardSlider: HTMLInputElement | null = null;
+let wildcardSliderValueLabel: HTMLSpanElement | null = null;
+let stageSelect: HTMLSelectElement | null = null;
+let levelSelect: HTMLSelectElement | null = null;
 
 const root = document.getElementById('editor-root');
 if (!root) {
@@ -63,8 +68,10 @@ function cycleCellValue(x: number, y: number): void {
   const current = currentGrid[y][x];
   if (current === null) {
     currentGrid[y][x] = 1;
-  } else if (current >= MAX_TILE_VALUE) {
+  } else if (current === 'W') {
     currentGrid[y][x] = null;
+  } else if (current >= MAX_TILE_VALUE) {
+    currentGrid[y][x] = 'W'; // After 7, cycle to wildcard
   } else {
     currentGrid[y][x] = current + 1;
   }
@@ -103,7 +110,7 @@ function updateStatus(message?: string): void {
   statusContainer.innerHTML = '';
 
   const info = document.createElement('div');
-  const movesText = minMoves !== null ? ` • Min Moves: <strong>${minMoves}</strong>` : '';
+  const movesText = minMoves !== null ? ` • Par/Min Moves: <strong>${minMoves}</strong>` : '';
   info.innerHTML = `Tiles: <strong>${tiles}</strong> • Solvable: <strong class="${solvable ? 'yes' : 'no'}">${solvable ? 'Yes' : 'No'}</strong>${movesText}`;
   statusContainer.appendChild(info);
 
@@ -119,6 +126,52 @@ function updateStatus(message?: string): void {
   statusContainer.appendChild(messageEl);
 }
 
+function validateStage(stageIndex: number): string {
+  if (stageIndex < 0 || stageIndex >= stages.length) return 'Invalid stage index';
+
+  const stage = stages[stageIndex];
+  const results: string[] = [];
+  results.push(`=== ${stage.name} Validation ===\n`);
+
+  stage.levels.forEach((level, index) => {
+    const solvable = isSolvable(level.layout);
+    const minMoves = solvable ? getMinMoves(level.layout) : null;
+    const tiles = level.layout.flat().filter(v => v !== null).length;
+    const status = solvable ? '✓' : '✗';
+    const parMatch = solvable && minMoves === level.par ? '✓' : (solvable ? `⚠ (actual: ${minMoves})` : '✗');
+
+    results.push(`Level ${index + 1}: ${status} Solvable | Par: ${level.par} ${parMatch} | Tiles: ${tiles} | Grid: ${level.gridSize}x${level.gridSize}`);
+  });
+
+  const allSolvable = stage.levels.every(level => isSolvable(level.layout));
+  results.push(`\nOverall: ${allSolvable ? '✓ All levels solvable' : '✗ Some levels unsolvable'}`);
+
+  return results.join('\n');
+}
+
+function exportStageToFile(stageIndex: number): void {
+  if (stageIndex < 0 || stageIndex >= stages.length) return;
+
+  const stage = stages[stageIndex];
+  const stageData = {
+    name: stage.name,
+    levels: stage.levels.map(level => ({
+      gridSize: level.gridSize,
+      par: level.par,
+      layout: level.layout,
+    })),
+  };
+
+  const json = JSON.stringify(stageData, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `stage${stageIndex + 1}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function setGridSize(size: number): void {
   const newGrid = createEmptyGrid(size);
   for (let y = 0; y < size; y++) {
@@ -130,13 +183,24 @@ function setGridSize(size: number): void {
   }
   currentGrid = newGrid;
   selectedCell = null;
+  const maxTiles = size * size;
   if (tileSlider) {
-    tileSlider.max = (size * size).toString();
-    if (Number(tileSlider.value) > size * size) {
-      tileSlider.value = String(size * size);
+    tileSlider.max = maxTiles.toString();
+    if (Number(tileSlider.value) > maxTiles) {
+      tileSlider.value = String(maxTiles);
     }
     if (tileSliderValueLabel) {
       tileSliderValueLabel.textContent = tileSlider.value;
+    }
+  }
+  if (wildcardSlider) {
+    const currentTileCount = tileSlider ? Number(tileSlider.value) : maxTiles;
+    wildcardSlider.max = currentTileCount.toString();
+    if (Number(wildcardSlider.value) > currentTileCount) {
+      wildcardSlider.value = currentTileCount.toString();
+    }
+    if (wildcardSliderValueLabel) {
+      wildcardSliderValueLabel.textContent = wildcardSlider.value;
     }
   }
   renderGrid();
@@ -175,10 +239,95 @@ function toJsonLevel(grid: GridState, par: number): string {
   return lines.join('\n');
 }
 
+function loadStageLevel(stageIndex: number, levelIndex: number): void {
+  if (stageIndex < 0 || stageIndex >= stages.length) return;
+  const stage = stages[stageIndex];
+  if (levelIndex < 0 || levelIndex >= stage.levels.length) return;
+
+  const level = stage.levels[levelIndex];
+  currentGrid = level.layout.map(row => [...row]);
+
+  // Update grid size selector
+  const sizeSelect = document.querySelector('.control select') as HTMLSelectElement | null;
+  if (sizeSelect) {
+    sizeSelect.value = level.gridSize.toString();
+  }
+
+  renderGrid();
+  updateStatus(`Loaded ${stage.name} - Level ${levelIndex + 1}`);
+}
+
+function updateLevelSelect(): void {
+  if (!stageSelect || !levelSelect) return;
+
+  const stageIndex = Number(stageSelect.value);
+  levelSelect.innerHTML = '';
+
+  if (stageIndex >= 0 && stageIndex < stages.length) {
+    const stage = stages[stageIndex];
+    stage.levels.forEach((_, index) => {
+      const option = document.createElement('option');
+      option.value = index.toString();
+      option.textContent = `Level ${index + 1}`;
+      levelSelect!.appendChild(option);
+    });
+  }
+}
+
 function createSidebarControls(): void {
   const header = document.createElement('h2');
   header.textContent = 'Level Editor';
   sidebar.appendChild(header);
+
+  // Stage selector
+  const stageWrapper = document.createElement('div');
+  stageWrapper.className = 'control';
+  const stageLabel = document.createElement('label');
+  stageLabel.textContent = 'Stage';
+  stageSelect = document.createElement('select');
+  stages.forEach((stage, index) => {
+    const option = document.createElement('option');
+    option.value = index.toString();
+    option.textContent = stage.name;
+    stageSelect!.appendChild(option);
+  });
+  stageSelect.addEventListener('change', () => {
+    updateLevelSelect();
+    if (levelSelect) {
+      levelSelect.value = '0';
+    }
+  });
+  stageWrapper.appendChild(stageLabel);
+  stageWrapper.appendChild(stageSelect);
+  sidebar.appendChild(stageWrapper);
+
+  // Level selector
+  const levelWrapper = document.createElement('div');
+  levelWrapper.className = 'control';
+  const levelLabel = document.createElement('label');
+  levelLabel.textContent = 'Level';
+  levelSelect = document.createElement('select');
+  levelWrapper.appendChild(levelLabel);
+  levelWrapper.appendChild(levelSelect);
+  sidebar.appendChild(levelWrapper);
+
+  // Initialize level select
+  updateLevelSelect();
+
+  // Load level button
+  const loadButton = createButton('Load Selected Level', () => {
+    if (stageSelect && levelSelect) {
+      loadStageLevel(Number(stageSelect.value), Number(levelSelect.value));
+    }
+  }, 'primary');
+  sidebar.appendChild(loadButton);
+
+  // Separator
+  const separator = document.createElement('hr');
+  separator.style.margin = '20px 0';
+  separator.style.border = 'none';
+  separator.style.borderTop = '1px solid #ddd';
+  sidebar.appendChild(separator);
 
   const sizeControl = createSelect(
     'Grid Size',
@@ -207,6 +356,17 @@ function createSidebarControls(): void {
     if (tileSliderValueLabel) {
       tileSliderValueLabel.textContent = tileSlider!.value;
     }
+    // Update wildcard slider max
+    if (wildcardSlider && tileSlider) {
+      const maxWildcards = Number(tileSlider.value);
+      wildcardSlider.max = maxWildcards.toString();
+      if (Number(wildcardSlider.value) > maxWildcards) {
+        wildcardSlider.value = maxWildcards.toString();
+        if (wildcardSliderValueLabel) {
+          wildcardSliderValueLabel.textContent = wildcardSlider.value;
+        }
+      }
+    }
   });
 
   tileSliderWrapper.appendChild(tileLabel);
@@ -214,22 +374,61 @@ function createSidebarControls(): void {
   tileSliderWrapper.appendChild(tileSliderValueLabel);
   sidebar.appendChild(tileSliderWrapper);
 
+  // Wildcard count slider
+  const wildcardSliderWrapper = document.createElement('div');
+  wildcardSliderWrapper.className = 'control';
+  const wildcardLabel = document.createElement('label');
+  wildcardLabel.textContent = 'Wildcard Count (in generated tiles)';
+  wildcardSlider = document.createElement('input');
+  wildcardSlider.type = 'range';
+  wildcardSlider.min = '0';
+  wildcardSlider.max = tileSlider.value;
+  wildcardSlider.value = '0';
+  wildcardSliderValueLabel = document.createElement('span');
+  wildcardSliderValueLabel.textContent = wildcardSlider.value;
+
+  wildcardSlider.addEventListener('input', () => {
+    if (wildcardSliderValueLabel) {
+      wildcardSliderValueLabel.textContent = wildcardSlider!.value;
+    }
+  });
+
+  wildcardSliderWrapper.appendChild(wildcardLabel);
+  wildcardSliderWrapper.appendChild(wildcardSlider);
+  wildcardSliderWrapper.appendChild(wildcardSliderValueLabel);
+  sidebar.appendChild(wildcardSliderWrapper);
+
   const generateButton = createButton('Auto Generate', () => {
     const desiredTiles = tileSlider ? Number(tileSlider.value) : currentGrid.length;
-    const generated = generateLevel({
-      gridSize: currentGrid.length,
-      tileCount: desiredTiles,
-      minValue: 1,
-      maxValue: 7,
-      maxAttempts: 800,
-    });
-    if (generated) {
-      currentGrid = generated;
-      renderGrid();
-      updateStatus('Generated solvable puzzle');
-    } else {
-      updateStatus('Could not generate a solvable puzzle with current settings');
-    }
+    const wildcardCount = wildcardSlider ? Number(wildcardSlider.value) : 0;
+    const gridSize = currentGrid.length;
+
+    // Adjust max attempts based on grid size to prevent hanging
+    const maxAttempts = gridSize >= 5 ? 50 : (gridSize >= 4 ? 200 : 800);
+
+    updateStatus('Generating puzzle...');
+
+    // Use setTimeout to allow UI to update
+    setTimeout(() => {
+      const startTime = Date.now();
+      const generated = generateLevel({
+        gridSize: gridSize,
+        tileCount: desiredTiles,
+        minValue: 1,
+        maxValue: 7,
+        maxAttempts: maxAttempts,
+        wildcardCount: wildcardCount,
+      });
+      const elapsed = Date.now() - startTime;
+
+      if (generated) {
+        currentGrid = generated;
+        renderGrid();
+        updateStatus(`Generated solvable puzzle in ${(elapsed / 1000).toFixed(2)}s` + (wildcardCount > 0 ? ` with ${wildcardCount} wildcard(s)` : ''));
+      } else {
+        updateStatus(`Could not generate a solvable puzzle after ${maxAttempts} attempts (${(elapsed / 1000).toFixed(2)}s). Try fewer tiles or different settings.`);
+      }
+    }, 10);
   });
   sidebar.appendChild(generateButton);
 
@@ -287,6 +486,88 @@ function createSidebarControls(): void {
     updateStatus('Level definition copied to clipboard');
   }, 'secondary');
   sidebar.appendChild(exportJsonButton);
+
+  // Separator
+  const separator2 = document.createElement('hr');
+  separator2.style.margin = '20px 0';
+  separator2.style.border = 'none';
+  separator2.style.borderTop = '1px solid #ddd';
+  sidebar.appendChild(separator2);
+
+  // Validate current stage button
+  const validateButton = createButton('Validate Current Stage', () => {
+    if (stageSelect) {
+      const stageIndex = Number(stageSelect.value);
+      const validation = validateStage(stageIndex);
+
+      // Show validation in a modal/alert
+      const modal = document.createElement('div');
+      modal.style.position = 'fixed';
+      modal.style.top = '50%';
+      modal.style.left = '50%';
+      modal.style.transform = 'translate(-50%, -50%)';
+      modal.style.background = 'white';
+      modal.style.padding = '30px';
+      modal.style.borderRadius = '10px';
+      modal.style.boxShadow = '0 10px 50px rgba(0,0,0,0.3)';
+      modal.style.zIndex = '1000';
+      modal.style.maxWidth = '600px';
+      modal.style.maxHeight = '80vh';
+      modal.style.overflow = 'auto';
+
+      const pre = document.createElement('pre');
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.style.fontFamily = 'monospace';
+      pre.style.fontSize = '14px';
+      pre.style.margin = '0 0 20px 0';
+      pre.textContent = validation;
+
+      const closeBtn = createButton('Close', () => {
+        document.body.removeChild(overlay);
+      }, 'secondary');
+
+      const copyBtn = createButton('Copy to Clipboard', () => {
+        copyToClipboard(validation);
+      }, 'primary');
+      copyBtn.style.marginRight = '10px';
+
+      const btnContainer = document.createElement('div');
+      btnContainer.appendChild(copyBtn);
+      btnContainer.appendChild(closeBtn);
+
+      modal.appendChild(pre);
+      modal.appendChild(btnContainer);
+
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.background = 'rgba(0,0,0,0.5)';
+      overlay.style.zIndex = '999';
+      overlay.appendChild(modal);
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          document.body.removeChild(overlay);
+        }
+      });
+
+      document.body.appendChild(overlay);
+    }
+  }, 'primary');
+  sidebar.appendChild(validateButton);
+
+  // Export stage to file button
+  const exportStageButton = createButton('Export Current Stage to File', () => {
+    if (stageSelect) {
+      const stageIndex = Number(stageSelect.value);
+      exportStageToFile(stageIndex);
+      updateStatus(`Exported ${stages[stageIndex].name} to file`);
+    }
+  }, 'secondary');
+  sidebar.appendChild(exportStageButton);
 }
 
 createSidebarControls();

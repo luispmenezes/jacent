@@ -1,25 +1,64 @@
-export type CellValue = number | null;
+export type CellValue = number | 'W' | null;
 export type GridState = CellValue[][];
 
-interface TilePosition {
-  x: number;
-  y: number;
-  value: number;
+// Compact state representation for efficient memoization
+interface TileState {
+  value: number | 'W';
+  row: number;
+  col: number;
 }
-
-const ADJACENT_STEPS = [
-  [-1, -1],
-  [0, -1],
-  [1, -1],
-  [-1, 0],
-  [1, 0],
-  [-1, 1],
-  [0, 1],
-  [1, 1],
-];
 
 export function cloneGrid(grid: GridState): GridState {
   return grid.map((row) => row.slice());
+}
+
+// Convert grid to compact tile array (only occupied cells)
+function gridToTileArray(grid: GridState): TileState[] {
+  const tiles: TileState[] = [];
+  for (let row = 0; row < grid.length; row++) {
+    for (let col = 0; col < grid[row].length; col++) {
+      const value = grid[row][col];
+      if (value !== null) {
+        tiles.push({ value, row, col });
+      }
+    }
+  }
+  return tiles;
+}
+
+// Create canonical string key from tile array for memoization
+function stateToKey(tiles: TileState[]): string {
+  // Sort for canonical representation
+  const sorted = [...tiles].sort((a, b) => {
+    if (a.row !== b.row) return a.row - b.row;
+    if (a.col !== b.col) return a.col - b.col;
+    return String(a.value).localeCompare(String(b.value));
+  });
+  return JSON.stringify(sorted);
+}
+
+// Check if two tiles are adjacent (8-directional)
+function areTilesAdjacent(a: TileState, b: TileState): boolean {
+  const dr = Math.abs(a.row - b.row);
+  const dc = Math.abs(a.col - b.col);
+  return dr <= 1 && dc <= 1 && (dr + dc) > 0;
+}
+
+// Check if tiles can merge based on game rules
+function canTilesMerge(from: TileState, to: TileState): boolean {
+  if (!areTilesAdjacent(from, to)) return false;
+
+  // Wildcard rules
+  if (to.value === 'W' && typeof from.value === 'number') {
+    return true; // Number can merge into wildcard
+  }
+
+  // Number-to-number merge
+  if (typeof from.value === 'number' && typeof to.value === 'number') {
+    return Math.abs(from.value - to.value) === 1;
+  }
+
+  return false;
 }
 
 export function countTiles(grid: GridState): number {
@@ -34,179 +73,139 @@ export function countTiles(grid: GridState): number {
   return count;
 }
 
-function getTilePositions(grid: GridState): TilePosition[] {
-  const tiles: TilePosition[] = [];
-  for (let y = 0; y < grid.length; y++) {
-    for (let x = 0; x < grid[y].length; x++) {
-      const value = grid[y][x];
-      if (value !== null) {
-        tiles.push({ x, y, value });
-      }
-    }
-  }
-  return tiles;
+// Calculate dynamic move limit based on grid complexity
+function calculateMoveLimit(tileCount: number): number {
+  // Base limit: roughly 2x the tile count
+  return Math.min(tileCount * 2, 50);
 }
 
-function getHash(grid: GridState): string {
-  return grid
-    .map((row) =>
-      row
-        .map((cell) => {
-          if (cell === null) return '.';
-          // encode numbers up to at least two digits
-          return cell.toString();
-        })
-        .join(',')
-    )
-    .join('|');
-}
+// DFS with memoization for optimal solvability checking
+export function isSolvable(grid: GridState, moveLimit?: number): boolean {
+  const initialTiles = gridToTileArray(grid);
 
-function inBounds(grid: GridState, x: number, y: number): boolean {
-  return y >= 0 && y < grid.length && x >= 0 && x < grid[y].length;
-}
-
-function applyMerge(
-  grid: GridState,
-  fromX: number,
-  fromY: number,
-  toX: number,
-  toY: number
-): GridState {
-  const next = cloneGrid(grid);
-  const value = next[fromY][fromX];
-  if (value === null) {
-    return next;
-  }
-  next[fromY][fromX] = null;
-  next[toY][toX] = value;
-  return next;
-}
-
-function getLegalMoves(grid: GridState): Array<{ from: TilePosition; to: TilePosition }> {
-  const tiles = getTilePositions(grid);
-  const moves: Array<{ from: TilePosition; to: TilePosition }> = [];
-
-  for (const from of tiles) {
-    for (const step of ADJACENT_STEPS) {
-      const toX = from.x + step[0];
-      const toY = from.y + step[1];
-      if (!inBounds(grid, toX, toY)) continue;
-      const value = grid[toY][toX];
-      if (value === null) continue;
-      if (Math.abs(from.value - value) === 1) {
-        moves.push({
-          from,
-          to: { x: toX, y: toY, value },
-        });
-      }
-    }
-  }
-
-  return moves;
-}
-
-export function isSolvable(grid: GridState, moveLimit = 25): boolean {
-  const totalTiles = countTiles(grid);
-  if (totalTiles <= 1) {
+  // Base case: 0 or 1 tile
+  if (initialTiles.length <= 1) {
     return true;
   }
 
-  const visited = new Set<string>();
+  const limit = moveLimit ?? calculateMoveLimit(initialTiles.length);
+  const memo = new Map<string, boolean>();
 
-  const dfs = (state: GridState, depth: number): boolean => {
-    const tilesRemaining = countTiles(state);
-    if (tilesRemaining <= 1) {
+  function dfs(tiles: TileState[], depth: number): boolean {
+    // Base case: one tile left = solved
+    if (tiles.length === 1) {
       return true;
     }
 
-    if (depth >= moveLimit) {
+    // Depth limit check
+    if (depth >= limit) {
       return false;
     }
 
-    const hash = getHash(state);
-    if (visited.has(hash)) {
-      return false;
-    }
-    visited.add(hash);
-
-    const moves = getLegalMoves(state);
-    if (moves.length === 0) {
-      return false;
+    // Check memoization
+    const key = stateToKey(tiles);
+    if (memo.has(key)) {
+      return memo.get(key)!;
     }
 
-    for (const move of moves) {
-      const { from, to } = move;
-      // dragging `from` onto `to`
-      const forward = applyMerge(state, from.x, from.y, to.x, to.y);
-      if (dfs(forward, depth + 1)) {
-        return true;
+    // Try all valid merges
+    for (let i = 0; i < tiles.length; i++) {
+      const from = tiles[i];
+
+      // Wildcards cannot be moved (only merged into)
+      if (from.value === 'W') continue;
+
+      for (let j = 0; j < tiles.length; j++) {
+        if (i === j) continue;
+        const to = tiles[j];
+
+        // Check if this merge is valid
+        if (!canTilesMerge(from, to)) continue;
+
+        // Create next state: remove both tiles, add merged tile at 'to' position
+        const nextTiles: TileState[] = [];
+        for (let k = 0; k < tiles.length; k++) {
+          if (k !== i && k !== j) {
+            nextTiles.push(tiles[k]);
+          }
+        }
+        nextTiles.push({ value: from.value, row: to.row, col: to.col });
+
+        // Recursive call
+        if (dfs(nextTiles, depth + 1)) {
+          memo.set(key, true);
+          return true;
+        }
       }
-
-      // dragging `to` onto `from`
-      const backward = applyMerge(state, to.x, to.y, from.x, from.y);
-      if (dfs(backward, depth + 1)) {
-        return true;
-      }
     }
 
+    // No valid path found
+    memo.set(key, false);
     return false;
-  };
+  }
 
-  return dfs(grid, 0);
+  return dfs(initialTiles, 0);
 }
 
-export function getMinMoves(grid: GridState, moveLimit = 25): number | null {
-  const totalTiles = countTiles(grid);
-  if (totalTiles <= 1) {
+// BFS with compact state representation - naturally finds shortest path
+export function getMinMoves(grid: GridState, moveLimit?: number): number | null {
+  const initialTiles = gridToTileArray(grid);
+
+  if (initialTiles.length <= 1) {
     return 0;
   }
 
+  const limit = moveLimit ?? calculateMoveLimit(initialTiles.length);
   const visited = new Set<string>();
-  let minMoves: number | null = null;
+  const queue: Array<{ tiles: TileState[]; depth: number }> = [{ tiles: initialTiles, depth: 0 }];
 
-  const dfs = (state: GridState, depth: number): void => {
-    const tilesRemaining = countTiles(state);
-    if (tilesRemaining <= 1) {
-      if (minMoves === null || depth < minMoves) {
-        minMoves = depth;
+  visited.add(stateToKey(initialTiles));
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const { tiles, depth } = current;
+
+    if (depth >= limit) {
+      continue;
+    }
+
+    // Try all valid merges
+    for (let i = 0; i < tiles.length; i++) {
+      const from = tiles[i];
+
+      // Wildcards cannot be moved
+      if (from.value === 'W') continue;
+
+      for (let j = 0; j < tiles.length; j++) {
+        if (i === j) continue;
+        const to = tiles[j];
+
+        // Check if this merge is valid
+        if (!canTilesMerge(from, to)) continue;
+
+        // Create next state
+        const nextTiles: TileState[] = [];
+        for (let k = 0; k < tiles.length; k++) {
+          if (k !== i && k !== j) {
+            nextTiles.push(tiles[k]);
+          }
+        }
+        nextTiles.push({ value: from.value, row: to.row, col: to.col });
+
+        // Check if solved
+        if (nextTiles.length === 1) {
+          return depth + 1; // BFS guarantees this is minimal
+        }
+
+        // Add to queue if not visited
+        const key = stateToKey(nextTiles);
+        if (!visited.has(key)) {
+          visited.add(key);
+          queue.push({ tiles: nextTiles, depth: depth + 1 });
+        }
       }
-      return;
     }
+  }
 
-    if (depth >= moveLimit) {
-      return;
-    }
-
-    // Early pruning: if we already found a solution and current depth >= minMoves, stop
-    if (minMoves !== null && depth >= minMoves) {
-      return;
-    }
-
-    const hash = getHash(state);
-    if (visited.has(hash)) {
-      return;
-    }
-    visited.add(hash);
-
-    const moves = getLegalMoves(state);
-    if (moves.length === 0) {
-      return;
-    }
-
-    for (const move of moves) {
-      const { from, to } = move;
-      // dragging `from` onto `to`
-      const forward = applyMerge(state, from.x, from.y, to.x, to.y);
-      dfs(forward, depth + 1);
-
-      // dragging `to` onto `from`
-      const backward = applyMerge(state, to.x, to.y, from.x, from.y);
-      dfs(backward, depth + 1);
-    }
-
-    visited.delete(hash);
-  };
-
-  dfs(grid, 0);
-  return minMoves;
+  return null;
 }

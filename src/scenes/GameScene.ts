@@ -4,7 +4,7 @@ import { Tile } from '../objects/Tile';
 import { stages, StageDefinition } from '../config/StageConfig';
 
 interface GameState {
-  tiles: { digit: number; gridX: number; gridY: number }[];
+  tiles: { digit: number | 'W'; gridX: number; gridY: number }[];
   moves: number;
 }
 export class GameScene extends Phaser.Scene {
@@ -848,17 +848,22 @@ export class GameScene extends Phaser.Scene {
     const neighbors: number[] = [];
     const { x, y } = spawnPos;
 
+    // Collect neighboring tile values (excluding wildcards)
     if (x > 0 && this.grid.isOccupied(x - 1, y)) {
-      neighbors.push(this.grid.getTile(x - 1, y)!.digit);
+      const tile = this.grid.getTile(x - 1, y)!;
+      if (typeof tile.digit === 'number') neighbors.push(tile.digit);
     }
     if (x < gridWidth - 1 && this.grid.isOccupied(x + 1, y)) {
-      neighbors.push(this.grid.getTile(x + 1, y)!.digit);
+      const tile = this.grid.getTile(x + 1, y)!;
+      if (typeof tile.digit === 'number') neighbors.push(tile.digit);
     }
     if (y > 0 && this.grid.isOccupied(x, y - 1)) {
-      neighbors.push(this.grid.getTile(x, y - 1)!.digit);
+      const tile = this.grid.getTile(x, y - 1)!;
+      if (typeof tile.digit === 'number') neighbors.push(tile.digit);
     }
     if (y < gridHeight - 1 && this.grid.isOccupied(x, y + 1)) {
-      neighbors.push(this.grid.getTile(x, y + 1)!.digit);
+      const tile = this.grid.getTile(x, y + 1)!;
+      if (typeof tile.digit === 'number') neighbors.push(tile.digit);
     }
 
     let digit: number;

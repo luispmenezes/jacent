@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { stages, StageDefinition } from '../config/StageConfig';
+import { stages } from '../config/StageConfig';
 
 interface LevelButton {
   container: Phaser.GameObjects.Container;
@@ -9,13 +9,19 @@ interface LevelButton {
   levelIndex: number;
 }
 
+interface StageGroup {
+  stageIndex: number;
+  header: Phaser.GameObjects.Text;
+  buttons: LevelButton[];
+}
+
 export class LevelSelectScene extends Phaser.Scene {
   private background!: Phaser.GameObjects.TileSprite;
   private backgroundPanel!: Phaser.GameObjects.Image;
   private titleText!: Phaser.GameObjects.Text;
   private stageHeader!: Phaser.GameObjects.Text;
   private backButton!: Phaser.GameObjects.Container;
-  private levelButtons: LevelButton[] = [];
+  private stageGroups: StageGroup[] = [];
   private scrollContainer!: Phaser.GameObjects.Container;
   private isDragging: boolean = false;
   private dragStartY: number = 0;
@@ -83,20 +89,40 @@ export class LevelSelectScene extends Phaser.Scene {
   }
 
   private createLevelButtons(): void {
-    this.levelButtons.forEach((btn) => btn.container.destroy());
-    this.levelButtons = [];
+    // Clear existing groups
+    this.stageGroups.forEach((group) => {
+      group.header.destroy();
+      group.buttons.forEach((btn) => btn.container.destroy());
+    });
+    this.stageGroups = [];
     this.scrollContainer.removeAll();
 
+    // Create groups for each stage
     stages.forEach((stage, stageIndex) => {
+      // Create stage header
+      const header = this.add.text(0, 0, stage.name, {
+        fontFamily: 'Arial',
+        fontSize: '24px',
+        fontStyle: 'bold',
+        color: '#222222',
+      }).setOrigin(0, 0.5);
+
+      // Create level buttons for this stage
+      const buttons: LevelButton[] = [];
       stage.levels.forEach((_level, levelIndex) => {
-        const button = this.buildLevelButton(stage, stageIndex, levelIndex);
-        this.levelButtons.push(button);
+        const button = this.buildLevelButton(stageIndex, levelIndex);
+        buttons.push(button);
         this.scrollContainer.add(button.container);
       });
+
+      // Add header to scroll container
+      this.scrollContainer.add(header);
+
+      this.stageGroups.push({ stageIndex, header, buttons });
     });
   }
 
-  private buildLevelButton(stage: StageDefinition, stageIndex: number, levelIndex: number): LevelButton {
+  private buildLevelButton(stageIndex: number, levelIndex: number): LevelButton {
     const container = this.add.container(0, 0);
 
     // Minimal ghost button with subtle border
@@ -104,7 +130,7 @@ export class LevelSelectScene extends Phaser.Scene {
     rect.setStrokeStyle(1, 0xcccccc);
     rect.setInteractive({ useHandCursor: true });
 
-    const label = this.add.text(0, 0, `${stage.name} ${levelIndex + 1}`, {
+    const label = this.add.text(0, 0, `Level ${levelIndex + 1}`, {
       fontFamily: 'Arial',
       fontSize: '18px',
       fontStyle: 'normal',
@@ -213,6 +239,8 @@ export class LevelSelectScene extends Phaser.Scene {
     const scaledButtonHeight = baseButtonHeight * buttonScale;
     const horizontalSpacing = 16;
     const verticalSpacing = 16;
+    const stageSpacing = 40; // Extra spacing between stages
+    const headerHeight = 30;
 
     // Calculate maximum columns that fit
     const availableWidth = width - 40; // 20px padding on each side
@@ -227,29 +255,42 @@ export class LevelSelectScene extends Phaser.Scene {
     const scrollAreaBottom = this.backButton.y - 30 * buttonScale - 20;
     const availableHeight = scrollAreaBottom - scrollAreaTop;
 
-    // Layout buttons in grid
-    let currentColumn = 0;
-    let currentRow = 0;
+    // Layout stage groups
+    let currentY = 0;
 
-    this.levelButtons.forEach((button) => {
-      button.container.setScale(buttonScale);
-      const x = startX + currentColumn * (scaledButtonWidth + horizontalSpacing) + scaledButtonWidth / 2;
-      const y = currentRow * (scaledButtonHeight + verticalSpacing) + scaledButtonHeight / 2;
-      button.container.setPosition(x, y);
+    this.stageGroups.forEach((group) => {
+      // Position stage header
+      group.header.setPosition(startX, currentY + headerHeight / 2);
+      group.header.setFontSize(Math.min(24, 24 * buttonScale));
+      currentY += headerHeight + 10;
 
-      currentColumn++;
-      if (currentColumn >= columns) {
-        currentColumn = 0;
-        currentRow++;
-      }
+      // Layout buttons for this stage in grid
+      let currentColumn = 0;
+      let currentRow = 0;
+
+      group.buttons.forEach((button) => {
+        button.container.setScale(buttonScale);
+        const x = startX + currentColumn * (scaledButtonWidth + horizontalSpacing) + scaledButtonWidth / 2;
+        const y = currentY + currentRow * (scaledButtonHeight + verticalSpacing) + scaledButtonHeight / 2;
+        button.container.setPosition(x, y);
+
+        currentColumn++;
+        if (currentColumn >= columns) {
+          currentColumn = 0;
+          currentRow++;
+        }
+      });
+
+      // Move to next stage
+      const stageRows = Math.ceil(group.buttons.length / columns);
+      currentY += stageRows * (scaledButtonHeight + verticalSpacing) + stageSpacing;
     });
 
     // Position scroll container
     this.scrollContainer.setPosition(0, scrollAreaTop);
 
     // Calculate scroll bounds
-    const totalRows = Math.ceil(this.levelButtons.length / columns);
-    const contentHeight = totalRows * (scaledButtonHeight + verticalSpacing) - verticalSpacing;
+    const contentHeight = currentY - stageSpacing; // Remove extra spacing at end
 
     this.minScrollY = 0;
     this.maxScrollY = Math.max(0, contentHeight - availableHeight);

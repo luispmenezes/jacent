@@ -1,12 +1,16 @@
 export const AssetConfig = {
   sprites: {
     tiles: {
-      key: 'tiles',
-      // Tiles 1-7 loaded from spritesheet assets/sprites/tiles.png
-      frames: Array.from({ length: 7 }, (_, i) => ({
-        key: `tile-${i + 1}`,
-        path: `assets/sprites/tiles.png`, // All tiles come from spritesheet
-      })),
+      key: 'number-tiles',
+      path: 'assets/sprites/number-tiles.png', // Spritesheet with tiles 1-7
+    },
+    specialTiles: {
+      key: 'special-tiles',
+      path: 'assets/sprites/special-tiles.png', // Spritesheet with special tiles (wildcard at index 2)
+    },
+    emptyTile: {
+      key: 'empty-tile',
+      path: 'assets/sprites/empty-tile.png', // Empty tile sprite
     },
     restart: {
       key: 'restart',
@@ -32,4 +36,4 @@ export const AssetConfig = {
   },
 };
 
-export type TileFrame = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type TileFrame = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 'W';

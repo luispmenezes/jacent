@@ -43,12 +43,22 @@ export class BootScene extends Phaser.Scene {
       percentText.destroy();
     });
 
-    // Load tile spritesheet (pixel art tiles 1-7, plus frame 8 for empty squares)
-    this.load.spritesheet('tiles-sheet', 'assets/sprites/tiles.png', {
+    // Load number tiles spritesheet (tiles 1-7)
+    this.load.spritesheet('number-tiles-sheet', AssetConfig.sprites.tiles.path, {
       frameWidth: 24,
       frameHeight: 24,
-      endFrame: 7, // Load frames 0-7 (tiles 1-7, plus empty square)
+      endFrame: 6, // Load frames 0-6 (tiles 1-7)
     });
+
+    // Load special tiles spritesheet (wildcard at index 2)
+    this.load.spritesheet('special-tiles-sheet', AssetConfig.sprites.specialTiles.path, {
+      frameWidth: 24,
+      frameHeight: 24,
+      endFrame: 2, // Load frames 0-2
+    });
+
+    // Load empty tile sprite
+    this.load.image('tile-empty', AssetConfig.sprites.emptyTile.path);
 
     // Load UI assets
     this.load.image('background', AssetConfig.ui.background);
@@ -72,26 +82,29 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Extract individual tile textures from spritesheet
+    // Extract individual tile textures from number tiles spritesheet
     // This creates separate texture keys (tile-1, tile-2, etc.) that the game expects
-    const tilesTexture = this.textures.get('tiles-sheet');
+    const tilesTexture = this.textures.get('number-tiles-sheet');
     for (let i = 1; i <= 7; i++) {
       const frameIndex = i - 1; // Spritesheet frames are 0-indexed
       const frame = tilesTexture.get(frameIndex);
       const canvas = this.textures.createCanvas(`tile-${i}`, frame.width, frame.height);
       if (canvas) {
-        canvas.drawFrame('tiles-sheet', frameIndex);
+        canvas.drawFrame('number-tiles-sheet', frameIndex);
         canvas.update();
       }
     }
 
-    // Extract frame 8 (index 7) for empty grid squares
-    const emptyFrame = tilesTexture.get(7);
-    const emptyCanvas = this.textures.createCanvas('tile-empty', emptyFrame.width, emptyFrame.height);
-    if (emptyCanvas) {
-      emptyCanvas.drawFrame('tiles-sheet', 7);
-      emptyCanvas.update();
+    // Extract wildcard tile from special tiles spritesheet (index 2)
+    const specialTilesTexture = this.textures.get('special-tiles-sheet');
+    const wildcardFrame = specialTilesTexture.get(2);
+    const wildcardCanvas = this.textures.createCanvas('tile-W', wildcardFrame.width, wildcardFrame.height);
+    if (wildcardCanvas) {
+      wildcardCanvas.drawFrame('special-tiles-sheet', 2);
+      wildcardCanvas.update();
     }
+
+    // Empty tile is already loaded as 'tile-empty' image, no extraction needed
 
     this.scene.start('MenuScene');
   }

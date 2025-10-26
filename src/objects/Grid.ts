@@ -93,8 +93,25 @@ export class Grid {
   }
 
   public canMerge(tileA: Tile, tileB: Tile): boolean {
-    // Jacent rule: tiles can merge if they differ by exactly 1 and are adjacent
-    return this.areTilesAdjacent(tileA, tileB) && Math.abs(tileA.digit - tileB.digit) === 1;
+    // Check adjacency first
+    if (!this.areTilesAdjacent(tileA, tileB)) {
+      return false;
+    }
+
+    // Wildcard merge rules:
+    // - Wildcards cannot be moved (checked in Tile.ts)
+    // - Numbers can merge INTO wildcards
+    // - Wildcards cannot merge with other wildcards
+    if (tileB.isWildcard() && typeof tileA.digit === 'number') {
+      return true; // Number merges into wildcard
+    }
+
+    // Standard Jacent rule: tiles can merge if they differ by exactly 1
+    if (typeof tileA.digit === 'number' && typeof tileB.digit === 'number') {
+      return Math.abs(tileA.digit - tileB.digit) === 1;
+    }
+
+    return false;
   }
 
   public mergeTiles(draggedTile: Tile, targetTile: Tile): void {
