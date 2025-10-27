@@ -658,7 +658,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.legalTargets = this.grid.getLegalTargets(tile);
+    // Get all tiles reachable through valid paths (including multi-step)
+    this.legalTargets = this.getAllReachableTiles(tile, this.grid);
 
     // Highlight legal targets
     for (const target of this.legalTargets) {
@@ -667,6 +668,24 @@ export class GameScene extends Phaser.Scene {
 
     // Save game state for undo
     this.saveGameState();
+  }
+
+  // Get all tiles reachable through valid straight-line paths
+  private getAllReachableTiles(startTile: Tile, grid: Grid): Tile[] {
+    const reachable: Tile[] = [];
+    const allTiles = grid.getAllTiles();
+
+    for (const targetTile of allTiles) {
+      if (targetTile === startTile) continue;
+
+      // Check if there's a valid path to this tile
+      const path = this.findMergePath(startTile, targetTile, grid);
+      if (path && path.length > 0) {
+        reachable.push(targetTile);
+      }
+    }
+
+    return reachable;
   }
 
   private handleTileDrag(_tile: Tile): void {
@@ -696,7 +715,9 @@ export class GameScene extends Phaser.Scene {
 
     // Calculate merge range based on current grid size and tile spacing
     const gridSize = grid.getGridSize();
-    const tileSize = this.getTileSizeForGrid(gridSize);
+    const tileSize = this.isEndless && this.endlessMode === 2
+      ? this.getTileSizeForEndlessGrid(grid.getGridWidth(), grid.getGridHeight())
+      : this.getTileSizeForGrid(gridSize);
     const mergeRange = tileSize * 0.6; // 60% of tile size
 
     for (const tile of allTiles) {
@@ -716,54 +737,27 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (targetTile && grid.canMerge(droppedTile, targetTile)) {
-      // Legal merge!
-      grid.mergeTiles(droppedTile, targetTile);
-      this.moves++;
+    if (targetTile) {
+      // Try to find a path from droppedTile to targetTile
+      const path = this.findMergePath(droppedTile, targetTile, grid);
 
-      // Update score in endless mode with progressive scoring
-      if (this.isEndless) {
-        // Score increases as you make more moves: floor(moves/10) + 1
-        const multiplier = Math.floor(this.moves / 10) + 1;
-        this.score += multiplier;
-      }
-
-      this.sound.play('right');
-
-      // In endless mode, spawn a new tile after merge
-      if (this.isEndless) {
-        this.time.delayedCall(250, () => {
-          // Apply gravity in Endless Mode 2
-          if (this.endlessMode === 2) {
-            this.applyGravity();
-            // Check if clearing tiles got us out of danger
-            this.checkDangerZone();
-            // Check if we need to spawn early due to no moves
-            this.checkForEarlySpawn();
-          }
-
-          // Only spawn tiles in Endless Mode 1 (original)
-          if (this.endlessMode === 1) {
-            this.spawnNewTileInEndlessMode();
-          }
-
-          this.updateUI();
-          this.checkGameState();
-        });
+      if (path && path.length > 0) {
+        // Valid path found! Execute all merges along the path
+        this.executeMergePath(droppedTile, path, grid);
       } else {
-        // Check win/lose conditions after a short delay
-        this.time.delayedCall(250, () => {
-          this.updateUI();
-          this.checkGameState();
-        });
-      }
-    } else {
-      // Illegal merge or no target
-      droppedTile.returnToStart();
-      if (targetTile) {
+        // No valid path
+        droppedTile.returnToStart();
         this.sound.play('wrong');
         this.shakeCamera();
+
+        // Remove last saved state since move wasn't made
+        if (this.undoStack.length > 0) {
+          this.undoStack.pop();
+        }
       }
+    } else {
+      // No target tile nearby
+      droppedTile.returnToStart();
 
       // Remove last saved state since move wasn't made
       if (this.undoStack.length > 0) {
@@ -772,6 +766,165 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.legalTargets = [];
+  }
+
+  // Find a valid path of adjacent tiles that can be merged (straight line only)
+  private findMergePath(startTile: Tile, endTile: Tile, grid: Grid): Tile[] | null {
+    // If directly adjacent, return single-step path
+    if (grid.canMerge(startTile, endTile)) {
+      return [endTile];
+    }
+
+    // Determine the direction from start to end
+    const dx = endTile.gridX - startTile.gridX;
+    const dy = endTile.gridY - startTile.gridY;
+
+    // Normalize to get direction (-1, 0, or 1 for each axis)
+    const dirX = dx === 0 ? 0 : dx / Math.abs(dx);
+    const dirY = dy === 0 ? 0 : dy / Math.abs(dy);
+
+    // Must be a straight line (horizontal, vertical, or diagonal)
+    if (dirX !== 0 && dirY !== 0) {
+      // Diagonal - must be 45 degrees
+      if (Math.abs(dx) !== Math.abs(dy)) {
+        return null; // Not a straight diagonal line
+      }
+    }
+
+    // Walk along the straight line and collect tiles
+    const path: Tile[] = [];
+    let currentX = startTile.gridX + dirX;
+    let currentY = startTile.gridY + dirY;
+
+    while (true) {
+      const nextTile = grid.getTile(currentX, currentY);
+
+      if (!nextTile) {
+        // Gap in the line - no valid path
+        return null;
+      }
+
+      // Check if the DRAGGED tile (startTile) value is compatible with this tile
+      // The dragged tile keeps its original value throughout the path
+      if (!this.canMergeValues(startTile, nextTile)) {
+        // Can't merge - no valid path
+        return null;
+      }
+
+      path.push(nextTile);
+
+      // Check if we reached the end
+      if (nextTile === endTile) {
+        return path;
+      }
+
+      // Move to next position
+      currentX += dirX;
+      currentY += dirY;
+
+      // Safety check - prevent infinite loop
+      if (path.length > 20) {
+        return null;
+      }
+    }
+  }
+
+  // Check if two tiles can merge based on their values (ignoring adjacency)
+  private canMergeValues(tileA: Tile, tileB: Tile): boolean {
+    // Wildcard rules
+    if (tileB.isWildcard() && typeof tileA.digit === 'number') {
+      return true; // Number merges into wildcard
+    }
+
+    // Standard rule: tiles can merge if they differ by exactly 1
+    if (typeof tileA.digit === 'number' && typeof tileB.digit === 'number') {
+      return Math.abs(tileA.digit - tileB.digit) === 1;
+    }
+
+    return false;
+  }
+
+  // Get all adjacent tiles (orthogonal + diagonal)
+  private getAdjacentTiles(tile: Tile, grid: Grid): Tile[] {
+    const adjacent: Tile[] = [];
+    const directions = [
+      [-1, -1], [0, -1], [1, -1], // Top row
+      [-1, 0], [1, 0],             // Middle row (left, right)
+      [-1, 1], [0, 1], [1, 1]      // Bottom row
+    ];
+
+    for (const [dx, dy] of directions) {
+      const newX = tile.gridX + dx;
+      const newY = tile.gridY + dy;
+      const neighborTile = grid.getTile(newX, newY);
+      if (neighborTile) {
+        adjacent.push(neighborTile);
+      }
+    }
+
+    return adjacent;
+  }
+
+  // Execute all merges along the path
+  private executeMergePath(startTile: Tile, path: Tile[], grid: Grid): void {
+    let currentTile = startTile;
+    let mergeCount = 0;
+
+    // Execute each merge in the path with animation delays
+    const executeMerge = (index: number) => {
+      if (index >= path.length) {
+        // All merges complete
+        this.moves++;
+
+        // Update score in endless mode with progressive scoring
+        if (this.isEndless) {
+          const multiplier = Math.floor(this.moves / 10) + 1;
+          this.score += multiplier * mergeCount; // Score based on combo length
+        }
+
+        this.sound.play('right');
+
+        // In endless mode, spawn a new tile after merge
+        if (this.isEndless) {
+          this.time.delayedCall(250, () => {
+            // Apply gravity in Endless Mode 2
+            if (this.endlessMode === 2) {
+              this.applyGravity();
+              // Check if clearing tiles got us out of danger
+              this.checkDangerZone();
+              // Check if we need to spawn early due to no moves
+              this.checkForEarlySpawn();
+            }
+
+            // Only spawn tiles in Endless Mode 1 (original)
+            if (this.endlessMode === 1) {
+              this.spawnNewTileInEndlessMode();
+            }
+
+            this.updateUI();
+            this.checkGameState();
+          });
+        } else {
+          // Check win/lose conditions after a short delay
+          this.time.delayedCall(250, () => {
+            this.updateUI();
+            this.checkGameState();
+          });
+        }
+        return;
+      }
+
+      const targetTile = path[index];
+      grid.mergeTiles(currentTile, targetTile);
+      mergeCount++;
+
+      // Continue to next merge after a short delay (250ms for emphasis)
+      this.time.delayedCall(250, () => {
+        executeMerge(index + 1);
+      });
+    };
+
+    executeMerge(0);
   }
 
   private saveGameState(): void {
