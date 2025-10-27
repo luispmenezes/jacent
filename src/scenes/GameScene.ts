@@ -36,13 +36,24 @@ export class GameScene extends Phaser.Scene {
   private initialLevelIndex: number = 0;
   private emptyTiles: Phaser.GameObjects.Sprite[] = [];
   private isEndless: boolean = false;
+  private endlessMode: number = 1; // 1 = original, 2 = rising blocks
+  private risingBlockTimer?: Phaser.Time.TimerEvent;
+  private dangerTimer?: Phaser.Time.TimerEvent;
+  private dangerBarBackground?: Phaser.GameObjects.Rectangle;
+  private dangerBarFill?: Phaser.GameObjects.Rectangle;
+  private dangerBarText?: Phaser.GameObjects.Text;
+  private inDangerMode: boolean = false;
+  private dangerStartTime: number = 0;
+  private hasSpawnedFirstRow: boolean = false;
+  private initialBottomRowCleared: boolean = false;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
-  init(data?: { stageIndex?: number; levelIndex?: number; isEndless?: boolean }): void {
+  init(data?: { stageIndex?: number; levelIndex?: number; isEndless?: boolean; endlessMode?: number }): void {
     this.isEndless = data?.isEndless ?? false;
+    this.endlessMode = data?.endlessMode ?? 1;
 
     if (!this.isEndless) {
       const requestedStage = data?.stageIndex ?? 0;
@@ -61,6 +72,9 @@ export class GameScene extends Phaser.Scene {
     this.score = 0;
     this.gameActive = true;
     this.undoStack = [];
+    this.inDangerMode = false;
+    this.hasSpawnedFirstRow = false;
+    this.initialBottomRowCleared = false;
 
     if (!this.isEndless) {
       this.currentStageIndex = this.initialStageIndex;
@@ -82,6 +96,13 @@ export class GameScene extends Phaser.Scene {
       this.scale.off('resize', this.handleResize, this);
       this.input.keyboard?.off('keydown-ESC', this.showPauseMenu, this);
     });
+  }
+
+  update(): void {
+    // Update danger bar if in danger mode
+    if (this.inDangerMode && this.endlessMode === 2) {
+      this.updateDangerBar();
+    }
   }
 
   private createBackground(): void {
@@ -346,7 +367,8 @@ export class GameScene extends Phaser.Scene {
     this.legalTargets = [];
 
     // Update title for endless mode
-    this.titleText.setText('Endless Mode');
+    const modeTitle = this.endlessMode === 2 ? 'Endless Mode 2' : 'Endless Mode';
+    this.titleText.setText(modeTitle);
     this.parText.setText(`Score: ${this.score}`);
 
     if (this.grid) {
@@ -385,6 +407,11 @@ export class GameScene extends Phaser.Scene {
     this.input.setDraggable(grid.getAllTiles());
     this.updateUndoButton();
     this.updateUI();
+
+    // Start rising block timer for Endless Mode 2
+    if (this.endlessMode === 2) {
+      this.startRisingBlockTimer();
+    }
   }
 
   private generateInitialEndlessTiles(grid: Grid, gridWidth: number, gridHeight: number, tileSize: number): void {
@@ -397,24 +424,40 @@ export class GameScene extends Phaser.Scene {
       attempts++;
       grid.clear();
 
-      // Start with 12-16 random tiles in the 8x4 grid
-      const numInitialTiles = Phaser.Math.Between(12, 16);
-      const positions: { x: number; y: number }[] = [];
+      let positions: { x: number; y: number }[] = [];
+      let numInitialTiles: number;
 
-      // Generate all possible positions
-      for (let y = 0; y < gridHeight; y++) {
-        for (let x = 0; x < gridWidth; x++) {
-          positions.push({ x, y });
+      if (this.endlessMode === 2) {
+        // For Endless Mode 2, fill the bottom 2 rows completely
+        for (let y = gridHeight - 2; y < gridHeight; y++) {
+          for (let x = 0; x < gridWidth; x++) {
+            positions.push({ x, y });
+          }
         }
+        numInitialTiles = positions.length; // All positions in bottom 2 rows
+      } else {
+        // For Endless Mode 1, spawn randomly across the grid
+        for (let y = 0; y < gridHeight; y++) {
+          for (let x = 0; x < gridWidth; x++) {
+            positions.push({ x, y });
+          }
+        }
+        // Shuffle and take 12-16 random positions
+        Phaser.Utils.Array.Shuffle(positions);
+        numInitialTiles = Phaser.Math.Between(12, 16);
       }
 
-      // Shuffle positions
-      Phaser.Utils.Array.Shuffle(positions);
-
-      // Create tiles at random positions
+      // Create tiles at positions
       for (let i = 0; i < numInitialTiles; i++) {
         const pos = positions[i];
-        const digit = Phaser.Math.Between(1, 5); // Random digit between 1 and 5
+        // In Endless Mode 2: 1-7 with 5% wildcards, otherwise 1-5
+        let digit: number | 'W';
+        if (this.endlessMode === 2) {
+          const isWildcard = Math.random() < 0.05; // 5% chance
+          digit = isWildcard ? 'W' : Phaser.Math.Between(1, 7);
+        } else {
+          digit = Phaser.Math.Between(1, 5);
+        }
         const worldPos = grid.getWorldPosition(pos.x, pos.y);
         const tile = new Tile(this, worldPos.x, worldPos.y, digit, pos.x, pos.y);
 
@@ -690,7 +733,20 @@ export class GameScene extends Phaser.Scene {
       // In endless mode, spawn a new tile after merge
       if (this.isEndless) {
         this.time.delayedCall(250, () => {
-          this.spawnNewTileInEndlessMode();
+          // Apply gravity in Endless Mode 2
+          if (this.endlessMode === 2) {
+            this.applyGravity();
+            // Check if clearing tiles got us out of danger
+            this.checkDangerZone();
+            // Check if we need to spawn early due to no moves
+            this.checkForEarlySpawn();
+          }
+
+          // Only spawn tiles in Endless Mode 1 (original)
+          if (this.endlessMode === 1) {
+            this.spawnNewTileInEndlessMode();
+          }
+
           this.updateUI();
           this.checkGameState();
         });
@@ -920,9 +976,14 @@ export class GameScene extends Phaser.Scene {
   private checkGameState(): void {
     // In endless mode, never trigger win condition (only game over when no moves)
     if (this.isEndless) {
-      if (this.grid && !this.grid.hasLegalMoves()) {
-        this.handleGameOver();
+      // In Endless Mode 2, don't end game on no moves - blocks keep rising
+      if (this.endlessMode === 1) {
+        if (this.grid && !this.grid.hasLegalMoves()) {
+          this.handleGameOver();
+        }
       }
+      // Endless Mode 2 only ends when grid is completely full and no moves left
+      // (which should rarely happen since blocks keep spawning)
     } else {
       if (this.grid && this.grid.checkWinCondition()) {
         this.handleWin();
@@ -1195,11 +1256,342 @@ export class GameScene extends Phaser.Scene {
   }
 
   private restartGame(): void {
+    // Clean up timers
+    if (this.risingBlockTimer) {
+      this.risingBlockTimer.destroy();
+      this.risingBlockTimer = undefined;
+    }
+    if (this.dangerTimer) {
+      this.dangerTimer.destroy();
+      this.dangerTimer = undefined;
+    }
+
     if (this.isEndless) {
-      this.scene.restart({ isEndless: true });
+      this.scene.restart({ isEndless: true, endlessMode: this.endlessMode });
     } else {
       this.scene.restart({ stageIndex: this.currentStageIndex, levelIndex: this.currentLevelIndex });
     }
+  }
+
+  // Endless Mode 2: Apply gravity - tiles fall down to fill empty spaces (like Tetris)
+  private applyGravity(): void {
+    if (!this.grid) return;
+
+    const gridWidth = this.grid.getGridWidth();
+    const gridHeight = this.grid.getGridHeight();
+
+    // Process each column from top to bottom
+    for (let x = 0; x < gridWidth; x++) {
+      // Collect all tiles in this column from top to bottom
+      const columnTiles: Tile[] = [];
+      for (let y = 0; y < gridHeight; y++) {
+        const tile = this.grid.getTile(x, y);
+        if (tile) {
+          columnTiles.push(tile);
+          // Remove from current position
+          this.grid.removeTile(x, y);
+        }
+      }
+
+      // Place tiles back starting from the bottom (normal gravity)
+      let targetY = gridHeight - 1;
+      for (let i = columnTiles.length - 1; i >= 0; i--) {
+        const tile = columnTiles[i];
+        this.grid.addTile(tile, x, targetY);
+        targetY--;
+      }
+    }
+  }
+
+  // Endless Mode 2: Push all rows down by 1, destroying tiles that go off the bottom
+  private pushRowDown(): void {
+    if (!this.grid) return;
+
+    const gridWidth = this.grid.getGridWidth();
+    const gridHeight = this.grid.getGridHeight();
+
+    // Destroy tiles in the bottom row (they're being pushed off)
+    for (let x = 0; x < gridWidth; x++) {
+      const tile = this.grid.getTile(x, gridHeight - 1);
+      if (tile) {
+        tile.destroy();
+        this.grid.removeTile(x, gridHeight - 1);
+      }
+    }
+
+    // Shift all tiles down by 1 row (start from bottom)
+    for (let y = gridHeight - 2; y >= 0; y--) {
+      for (let x = 0; x < gridWidth; x++) {
+        const tile = this.grid.getTile(x, y);
+        if (tile) {
+          this.grid.removeTile(x, y);
+          this.grid.addTile(tile, x, y + 1);
+        }
+      }
+    }
+  }
+
+  // Endless Mode 2: Spawn a new row of tiles at the top
+  private spawnTopRow(): void {
+    if (!this.grid) return;
+
+    const gridWidth = this.grid.getGridWidth();
+    const gridHeight = this.grid.getGridHeight();
+    const tileSize = this.getTileSizeForEndlessGrid(gridWidth, gridHeight);
+    const topY = 0;
+
+    // Fill the entire top row with tiles
+    for (let x = 0; x < gridWidth; x++) {
+      // Generate digit: 1-7 with 5% wildcards
+      const isWildcard = Math.random() < 0.05; // 5% chance
+      const digit: number | 'W' = isWildcard ? 'W' : Phaser.Math.Between(1, 7);
+      const worldPos = this.grid.getWorldPosition(x, topY);
+      const tile = new Tile(this, worldPos.x, worldPos.y, digit, x, topY);
+
+      const targetScale = tileSize / tile.width;
+
+      tile.on('dragstart', () => {
+        this.handleTileDragStart(tile);
+      });
+
+      tile.on('drag', () => {
+        this.handleTileDrag(tile);
+      });
+
+      tile.on('drop', (droppedTile: Tile) => {
+        this.handleTileDrop(droppedTile);
+      });
+
+      this.grid.addTile(tile, x, topY);
+
+      // Set initial scale
+      tile.setScale(targetScale);
+
+      // Make it draggable
+      this.input.setDraggable(tile);
+    }
+
+    // After spawning all tiles, apply gravity with animation
+    this.time.delayedCall(100, () => {
+      this.applyGravity();
+    });
+  }
+
+  // Endless Mode 2: Calculate spawn interval based on score
+  private getRisingBlockInterval(): number {
+    // Start at 10000ms (10 seconds), decrease by 50ms every 10 score points
+    // Minimum of 3000ms (3 seconds)
+    const baseInterval = 10000;
+    const speedIncrease = Math.floor(this.score / 10) * 50;
+    const interval = Math.max(3000, baseInterval - speedIncrease);
+    return interval;
+  }
+
+  // Endless Mode 2: Start or restart the rising block timer
+  private startRisingBlockTimer(): void {
+    // Clean up existing timer
+    if (this.risingBlockTimer) {
+      this.risingBlockTimer.destroy();
+    }
+
+    const interval = this.getRisingBlockInterval();
+
+    this.risingBlockTimer = this.time.addEvent({
+      delay: interval,
+      callback: () => {
+        if (this.gameActive) {
+          this.onRisingBlockTick();
+        }
+      },
+      loop: false, // We'll manually restart to update the interval
+    });
+  }
+
+  // Endless Mode 2: Called when it's time to spawn new row (like Tetris)
+  private onRisingBlockTick(): void {
+    if (!this.gameActive || !this.grid) return;
+
+    // Just spawn new row at top - it will apply gravity automatically
+    this.spawnTopRow();
+
+    // Mark that we've spawned at least one row
+    this.hasSpawnedFirstRow = true;
+
+    // Check danger after gravity settles (after the delay in spawnTopRow)
+    this.time.delayedCall(200, () => {
+      this.checkDangerZone();
+      // After checking danger, check if we need to spawn another row immediately
+      this.checkForEarlySpawn();
+    });
+
+    // Restart timer with potentially faster speed
+    this.startRisingBlockTimer();
+  }
+
+  // Endless Mode 2: Check if grid is too empty and no moves available
+  private checkForEarlySpawn(): void {
+    if (!this.grid || this.endlessMode !== 2 || !this.gameActive) return;
+
+    const gridWidth = this.grid.getGridWidth();
+    const gridHeight = this.grid.getGridHeight();
+
+    // Find the tallest column
+    let maxColumnHeight = 0;
+    for (let x = 0; x < gridWidth; x++) {
+      let columnHeight = 0;
+      for (let y = gridHeight - 1; y >= 0; y--) {
+        if (this.grid.isOccupied(x, y)) {
+          columnHeight = gridHeight - y;
+          break;
+        }
+      }
+      maxColumnHeight = Math.max(maxColumnHeight, columnHeight);
+    }
+
+    // If tallest column is 4 or less, check for legal moves
+    if (maxColumnHeight <= 4) {
+      const hasLegalMoves = this.grid.hasLegalMoves();
+
+      if (!hasLegalMoves) {
+        // No legal moves and grid is low - spawn immediately!
+        // Cancel current timer and spawn new row
+        if (this.risingBlockTimer) {
+          this.risingBlockTimer.destroy();
+          this.risingBlockTimer = undefined;
+        }
+
+        // Spawn immediately
+        this.time.delayedCall(500, () => {
+          this.onRisingBlockTick();
+        });
+      }
+    }
+  }
+
+  // Endless Mode 2: Check if any column is full (danger zone)
+  private checkDangerZone(): void {
+    if (!this.grid || this.endlessMode !== 2) return;
+
+    const gridWidth = this.grid.getGridWidth();
+    const gridHeight = this.grid.getGridHeight();
+
+    // Check if player has made any moves (cleared any tiles)
+    if (!this.initialBottomRowCleared && this.moves > 0) {
+      this.initialBottomRowCleared = true;
+    }
+
+    // Only start danger checking after:
+    // 1. At least one new row has spawned, AND
+    // 2. Player has made at least one move
+    if (!this.hasSpawnedFirstRow || !this.initialBottomRowCleared) {
+      return;
+    }
+
+    // Check if any column is completely full (all 8 positions occupied)
+    let hasFullColumn = false;
+    for (let x = 0; x < gridWidth; x++) {
+      let columnCount = 0;
+      for (let y = 0; y < gridHeight; y++) {
+        if (this.grid.isOccupied(x, y)) {
+          columnCount++;
+        }
+      }
+
+      if (columnCount === gridHeight) {
+        hasFullColumn = true;
+        break;
+      }
+    }
+
+    if (hasFullColumn && !this.inDangerMode) {
+      // Enter danger mode - at least one column is completely full
+      this.startDangerMode();
+    } else if (!hasFullColumn && this.inDangerMode) {
+      // Exit danger mode - player cleared tiles so no column is full anymore
+      this.exitDangerMode();
+    }
+  }
+
+  // Endless Mode 2: Start the 5-second danger countdown
+  private startDangerMode(): void {
+    this.inDangerMode = true;
+    this.dangerStartTime = this.time.now;
+
+    // Create danger bar UI at bottom of screen
+    const cam = this.cameras.main;
+    const barWidth = cam.width * 0.8;
+    const barHeight = 40;
+    const barX = cam.centerX;
+    const barY = cam.height - 60;
+
+    // Background
+    this.dangerBarBackground = this.add.rectangle(barX, barY, barWidth, barHeight, 0x333333);
+    this.dangerBarBackground.setDepth(2000);
+    this.dangerBarBackground.setScrollFactor(0);
+
+    // Fill (starts full, drains over 5 seconds)
+    this.dangerBarFill = this.add.rectangle(barX, barY, barWidth - 4, barHeight - 4, 0xff4444);
+    this.dangerBarFill.setDepth(2001);
+    this.dangerBarFill.setScrollFactor(0);
+
+    // Text
+    this.dangerBarText = this.add.text(barX, barY, 'DANGER! Column is full!', {
+      fontSize: '20px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+    });
+    this.dangerBarText.setOrigin(0.5);
+    this.dangerBarText.setDepth(2002);
+    this.dangerBarText.setScrollFactor(0);
+
+    // Start timer
+    this.dangerTimer = this.time.addEvent({
+      delay: 5000,
+      callback: () => {
+        // Time's up! Game over
+        this.handleGameOver();
+      },
+      loop: false,
+    });
+  }
+
+  // Endless Mode 2: Exit danger mode (player cleared the top)
+  private exitDangerMode(): void {
+    this.inDangerMode = false;
+
+    // Clean up danger timer
+    if (this.dangerTimer) {
+      this.dangerTimer.destroy();
+      this.dangerTimer = undefined;
+    }
+
+    // Remove danger bar UI
+    if (this.dangerBarBackground) {
+      this.dangerBarBackground.destroy();
+      this.dangerBarBackground = undefined;
+    }
+    if (this.dangerBarFill) {
+      this.dangerBarFill.destroy();
+      this.dangerBarFill = undefined;
+    }
+    if (this.dangerBarText) {
+      this.dangerBarText.destroy();
+      this.dangerBarText = undefined;
+    }
+  }
+
+  // Update danger bar fill
+  private updateDangerBar(): void {
+    if (!this.inDangerMode || !this.dangerBarFill || !this.dangerTimer) return;
+
+    const elapsed = this.time.now - this.dangerStartTime;
+    const remaining = Math.max(0, 5000 - elapsed);
+    const progress = remaining / 5000;
+
+    const cam = this.cameras.main;
+    const maxWidth = cam.width * 0.8 - 4;
+    this.dangerBarFill.width = maxWidth * progress;
   }
 
   private shakeCamera(): void {

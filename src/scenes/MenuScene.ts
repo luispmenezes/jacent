@@ -5,6 +5,7 @@ export class MenuScene extends Phaser.Scene {
   private backgroundPanel!: Phaser.GameObjects.Image;
   private playButton!: Phaser.GameObjects.Container;
   private endlessModeButton!: Phaser.GameObjects.Container;
+  private endlessMode2Button!: Phaser.GameObjects.Container;
   private levelSelectButton!: Phaser.GameObjects.Container;
   private howToPlayButton!: Phaser.GameObjects.Container;
   private titleText!: Phaser.GameObjects.Text;
@@ -62,7 +63,12 @@ export class MenuScene extends Phaser.Scene {
 
     this.endlessModeButton = this.createButton('Endless Mode', () => {
       this.sound.play('click02');
-      this.scene.start('GameScene', { isEndless: true });
+      this.scene.start('GameScene', { isEndless: true, endlessMode: 1 });
+    });
+
+    this.endlessMode2Button = this.createButton('Endless Mode 2', () => {
+      this.sound.play('click02');
+      this.scene.start('GameScene', { isEndless: true, endlessMode: 2 });
     });
 
     this.levelSelectButton = this.createButton('Level Select', () => {
@@ -149,14 +155,16 @@ export class MenuScene extends Phaser.Scene {
 
     this.playButton.setScale(buttonScale);
     this.endlessModeButton.setScale(buttonScale);
+    this.endlessMode2Button.setScale(buttonScale);
     this.levelSelectButton.setScale(buttonScale);
     this.howToPlayButton.setScale(buttonScale);
 
     const buttonsYStart = this.subtitleText.y + subtitleSize + height * 0.08;
     this.playButton.setPosition(cam.centerX, buttonsYStart);
     this.endlessModeButton.setPosition(cam.centerX, buttonsYStart + 80 * buttonScale);
-    this.levelSelectButton.setPosition(cam.centerX, buttonsYStart + 160 * buttonScale);
-    this.howToPlayButton.setPosition(cam.centerX, buttonsYStart + 240 * buttonScale);
+    this.endlessMode2Button.setPosition(cam.centerX, buttonsYStart + 160 * buttonScale);
+    this.levelSelectButton.setPosition(cam.centerX, buttonsYStart + 240 * buttonScale);
+    this.howToPlayButton.setPosition(cam.centerX, buttonsYStart + 320 * buttonScale);
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
