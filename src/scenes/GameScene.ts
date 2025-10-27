@@ -7,46 +7,76 @@ interface GameState {
   tiles: { digit: number | 'W'; gridX: number; gridY: number }[];
   moves: number;
 }
+
+// ============================================================================
+// GAME SCENE - Main gameplay logic for normal levels and endless modes
+// ============================================================================
 export class GameScene extends Phaser.Scene {
+  // ========================================
+  // PROPERTIES - Game State
+  // ========================================
+  // Game state
   private grid: Grid | null = null;
   private moves: number = 0;
-  private par: number = 0; // Target moves for current level
-  private score: number = 0; // Score for endless mode
-  private movesText!: Phaser.GameObjects.Text;
-  private parText!: Phaser.GameObjects.Text;
-  private tilesRemainingText!: Phaser.GameObjects.Text;
-  private titleText!: Phaser.GameObjects.Text;
-  private instructionsText!: Phaser.GameObjects.Text;
-  private goalText!: Phaser.GameObjects.Text;
-  private movesLabel!: Phaser.GameObjects.Text;
-  private tilesLabel!: Phaser.GameObjects.Text;
+  private par: number = 0;
+  private score: number = 0;
   private gameActive: boolean = true;
-  private restartButton!: Phaser.GameObjects.Text;
-  private undoButton!: Phaser.GameObjects.Text;
-  private background!: Phaser.GameObjects.TileSprite;
-  private backgroundPanel!: Phaser.GameObjects.Image;
   private undoStack: GameState[] = [];
   private maxUndos: number = 3;
   private legalTargets: Tile[] = [];
+
+  // Level progression (normal mode)
   private currentStageIndex: number = 0;
   private currentLevelIndex: number = 0;
-  private readonly stages: StageDefinition[] = stages;
-  private gridBounds: { top: number; bottom: number; left: number; right: number } | null = null;
   private initialStageIndex: number = 0;
   private initialLevelIndex: number = 0;
-  private emptyTiles: Phaser.GameObjects.Sprite[] = [];
+  private readonly stages: StageDefinition[] = stages;
+
+  // Endless mode state
   private isEndless: boolean = false;
-  private endlessMode: number = 1; // 1 = original, 2 = rising blocks
+  private endlessMode: number = 1; // 1 = random spawn, 2 = Tetris-style
+
+  // Endless Mode 2 (Tetris-style) specific
   private risingBlockTimer?: Phaser.Time.TimerEvent;
+  private hasSpawnedFirstRow: boolean = false;
+  private initialBottomRowCleared: boolean = false;
   private dangerTimer?: Phaser.Time.TimerEvent;
+  private inDangerMode: boolean = false;
+  private dangerStartTime: number = 0;
+
+  // ========================================
+  // PROPERTIES - UI Elements
+  // ========================================
+  // Text displays
+  private titleText!: Phaser.GameObjects.Text;
+  private movesText!: Phaser.GameObjects.Text;
+  private parText!: Phaser.GameObjects.Text;
+  private tilesRemainingText!: Phaser.GameObjects.Text;
+  private movesLabel!: Phaser.GameObjects.Text;
+  private tilesLabel!: Phaser.GameObjects.Text;
+  private instructionsText!: Phaser.GameObjects.Text;
+  private goalText!: Phaser.GameObjects.Text;
+
+  // Buttons
+  private restartButton!: Phaser.GameObjects.Text;
+  private undoButton!: Phaser.GameObjects.Text;
+
+  // Background elements
+  private background!: Phaser.GameObjects.TileSprite;
+  private backgroundPanel!: Phaser.GameObjects.Image;
+  private emptyTiles: Phaser.GameObjects.Sprite[] = [];
+
+  // Danger warning (Endless Mode 2)
   private dangerBarBackground?: Phaser.GameObjects.Rectangle;
   private dangerBarFill?: Phaser.GameObjects.Rectangle;
   private dangerBarText?: Phaser.GameObjects.Text;
-  private inDangerMode: boolean = false;
-  private dangerStartTime: number = 0;
-  private hasSpawnedFirstRow: boolean = false;
-  private initialBottomRowCleared: boolean = false;
 
+  // Layout
+  private gridBounds: { top: number; bottom: number; left: number; right: number } | null = null;
+
+  // ========================================
+  // LIFECYCLE METHODS
+  // ========================================
   constructor() {
     super({ key: 'GameScene' });
   }
@@ -105,6 +135,9 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ========================================
+  // UI CREATION & LAYOUT
+  // ========================================
   private createBackground(): void {
     const cam = this.cameras.main;
 
@@ -252,6 +285,9 @@ export class GameScene extends Phaser.Scene {
     this.layoutUI();
   }
 
+  // ========================================
+  // GRID & LEVEL SETUP
+  // ========================================
   private createGrid(): void {
     if (this.isEndless) {
       this.startEndlessMode();
@@ -651,6 +687,9 @@ export class GameScene extends Phaser.Scene {
     return { x: centerX, y: centerY };
   }
 
+  // ========================================
+  // TILE INTERACTION - Drag & Drop with Path Merging
+  // ========================================
   private handleTileDragStart(tile: Tile): void {
     if (!this.gameActive) return;
 
@@ -844,26 +883,6 @@ export class GameScene extends Phaser.Scene {
     return false;
   }
 
-  // Get all adjacent tiles (orthogonal + diagonal)
-  private getAdjacentTiles(tile: Tile, grid: Grid): Tile[] {
-    const adjacent: Tile[] = [];
-    const directions = [
-      [-1, -1], [0, -1], [1, -1], // Top row
-      [-1, 0], [1, 0],             // Middle row (left, right)
-      [-1, 1], [0, 1], [1, 1]      // Bottom row
-    ];
-
-    for (const [dx, dy] of directions) {
-      const newX = tile.gridX + dx;
-      const newY = tile.gridY + dy;
-      const neighborTile = grid.getTile(newX, newY);
-      if (neighborTile) {
-        adjacent.push(neighborTile);
-      }
-    }
-
-    return adjacent;
-  }
 
   // Execute all merges along the path
   private executeMergePath(startTile: Tile, path: Tile[], grid: Grid): void {
@@ -927,6 +946,9 @@ export class GameScene extends Phaser.Scene {
     executeMerge(0);
   }
 
+  // ========================================
+  // UNDO SYSTEM
+  // ========================================
   private saveGameState(): void {
     const grid = this.grid;
     if (!grid) {
@@ -1030,6 +1052,9 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ========================================
+  // ENDLESS MODE 1 - Random Tile Spawning
+  // ========================================
   private spawnNewTileInEndlessMode(): void {
     if (!this.grid) return;
 
@@ -1126,6 +1151,9 @@ export class GameScene extends Phaser.Scene {
     this.input.setDraggable(tile);
   }
 
+  // ========================================
+  // GAME STATE CHECKING
+  // ========================================
   private checkGameState(): void {
     // In endless mode, never trigger win condition (only game over when no moves)
     if (this.isEndless) {
@@ -1146,6 +1174,9 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ========================================
+  // MODAL DIALOGS
+  // ========================================
   private showPauseMenu(): void {
     if (!this.gameActive) return; // Don't pause if game is already over
 
@@ -1426,7 +1457,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Endless Mode 2: Apply gravity - tiles fall down to fill empty spaces (like Tetris)
+  // ========================================
+  // ENDLESS MODE 2 - Tetris-Style Rising Blocks
+  // ========================================
+  // Apply gravity - tiles fall down to fill empty spaces (like Tetris)
   private applyGravity(): void {
     if (!this.grid) return;
 
@@ -1456,33 +1490,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Endless Mode 2: Push all rows down by 1, destroying tiles that go off the bottom
-  private pushRowDown(): void {
-    if (!this.grid) return;
-
-    const gridWidth = this.grid.getGridWidth();
-    const gridHeight = this.grid.getGridHeight();
-
-    // Destroy tiles in the bottom row (they're being pushed off)
-    for (let x = 0; x < gridWidth; x++) {
-      const tile = this.grid.getTile(x, gridHeight - 1);
-      if (tile) {
-        tile.destroy();
-        this.grid.removeTile(x, gridHeight - 1);
-      }
-    }
-
-    // Shift all tiles down by 1 row (start from bottom)
-    for (let y = gridHeight - 2; y >= 0; y--) {
-      for (let x = 0; x < gridWidth; x++) {
-        const tile = this.grid.getTile(x, y);
-        if (tile) {
-          this.grid.removeTile(x, y);
-          this.grid.addTile(tile, x, y + 1);
-        }
-      }
-    }
-  }
 
   // Endless Mode 2: Spawn a new row of tiles at the top
   private spawnTopRow(): void {
@@ -1747,6 +1754,9 @@ export class GameScene extends Phaser.Scene {
     this.dangerBarFill.width = maxWidth * progress;
   }
 
+  // ========================================
+  // UTILITY METHODS
+  // ========================================
   private shakeCamera(): void {
     this.cameras.main.shake(100, 0.005);
   }
