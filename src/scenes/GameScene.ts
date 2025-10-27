@@ -4,7 +4,7 @@ import { Tile } from '../objects/Tile';
 import { stages, StageDefinition } from '../config/StageConfig';
 
 interface GameState {
-  tiles: { digit: number | 'W'; gridX: number; gridY: number }[];
+  tiles: { digit: number | 'W' | '+' | '-'; gridX: number; gridY: number }[];
   moves: number;
 }
 
@@ -486,11 +486,16 @@ export class GameScene extends Phaser.Scene {
       // Create tiles at positions
       for (let i = 0; i < numInitialTiles; i++) {
         const pos = positions[i];
-        // In Endless Mode 2: 1-7 with 5% wildcards, otherwise 1-5
-        let digit: number | 'W';
+        // In Endless Mode 2: 1-7 with 5% special tiles (W/+/-), otherwise 1-5
+        let digit: number | 'W' | '+' | '-';
         if (this.endlessMode === 2) {
-          const isWildcard = Math.random() < 0.05; // 5% chance
-          digit = isWildcard ? 'W' : Phaser.Math.Between(1, 7);
+          const isSpecial = Math.random() < 0.05; // 5% chance for special tile
+          if (isSpecial) {
+            const specialTiles: ('W' | '+' | '-')[] = ['W', '+', '-'];
+            digit = specialTiles[Math.floor(Math.random() * 3)];
+          } else {
+            digit = Phaser.Math.Between(1, 7);
+          }
         } else {
           digit = Phaser.Math.Between(1, 5);
         }
@@ -870,14 +875,19 @@ export class GameScene extends Phaser.Scene {
 
   // Check if two tiles can merge based on their values (ignoring adjacency)
   private canMergeValues(tileA: Tile, tileB: Tile): boolean {
+    // Plus/Minus rules: can merge with number tiles only
+    if ((tileA.isPlus() || tileA.isMinus()) && tileB.isNumberTile()) {
+      return true;
+    }
+
     // Wildcard rules
-    if (tileB.isWildcard() && typeof tileA.digit === 'number') {
+    if (tileB.isWildcard() && tileA.isNumberTile()) {
       return true; // Number merges into wildcard
     }
 
     // Standard rule: tiles can merge if they differ by exactly 1
-    if (typeof tileA.digit === 'number' && typeof tileB.digit === 'number') {
-      return Math.abs(tileA.digit - tileB.digit) === 1;
+    if (tileA.isNumberTile() && tileB.isNumberTile()) {
+      return Math.abs((tileA.digit as number) - (tileB.digit as number)) === 1;
     }
 
     return false;
@@ -934,7 +944,35 @@ export class GameScene extends Phaser.Scene {
       }
 
       const targetTile = path[index];
-      grid.mergeTiles(currentTile, targetTile);
+
+      // Handle plus/minus transformations
+      if (currentTile.isPlus() || currentTile.isMinus()) {
+        // Transform the target number tile
+        const oldValue = targetTile.digit as number;
+        let newValue: number;
+
+        if (currentTile.isPlus()) {
+          // Plus: increase by 1 with wrapping (7 -> 1)
+          newValue = (oldValue % 7) + 1;
+        } else {
+          // Minus: decrease by 1 with wrapping (1 -> 7)
+          newValue = ((oldValue - 2 + 7) % 7) + 1;
+        }
+
+        // Update the target tile's digit
+        targetTile.setDigit(newValue);
+
+        // Remove the special tile from the grid
+        grid.removeTile(currentTile.gridX, currentTile.gridY);
+        currentTile.destroy();
+
+        // Target tile stays in place, becomes the new currentTile for next merge
+        currentTile = targetTile;
+      } else {
+        // Standard merge behavior (number-to-number or number-to-wildcard)
+        grid.mergeTiles(currentTile, targetTile);
+      }
+
       mergeCount++;
 
       // Continue to next merge after a short delay (250ms for emphasis)
@@ -1502,9 +1540,15 @@ export class GameScene extends Phaser.Scene {
 
     // Fill the entire top row with tiles
     for (let x = 0; x < gridWidth; x++) {
-      // Generate digit: 1-7 with 5% wildcards
-      const isWildcard = Math.random() < 0.05; // 5% chance
-      const digit: number | 'W' = isWildcard ? 'W' : Phaser.Math.Between(1, 7);
+      // Generate digit: 1-7 with 5% special tiles (wildcard, plus, or minus)
+      const isSpecial = Math.random() < 0.05; // 5% chance for special tile
+      let digit: number | 'W' | '+' | '-';
+      if (isSpecial) {
+        const specialTiles: ('W' | '+' | '-')[] = ['W', '+', '-'];
+        digit = specialTiles[Math.floor(Math.random() * 3)];
+      } else {
+        digit = Phaser.Math.Between(1, 7);
+      }
       const worldPos = this.grid.getWorldPosition(x, topY);
       const tile = new Tile(this, worldPos.x, worldPos.y, digit, x, topY);
 

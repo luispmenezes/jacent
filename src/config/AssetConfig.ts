@@ -6,7 +6,7 @@ export const AssetConfig = {
     },
     specialTiles: {
       key: 'special-tiles',
-      path: 'assets/sprites/special-tiles.png', // Spritesheet with special tiles (wildcard at index 2)
+      path: 'assets/sprites/special-tiles.png', // Spritesheet: minus (0), plus (1), wildcard (2)
     },
     emptyTile: {
       key: 'empty-tile',
@@ -36,4 +36,4 @@ export const AssetConfig = {
   },
 };
 
-export type TileFrame = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 'W';
+export type TileFrame = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 'W' | '+' | '-';

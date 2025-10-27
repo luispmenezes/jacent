@@ -54,7 +54,7 @@ function ensureAtLeastOneMergeablePair(grid: GridState): boolean {
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const value = grid[y][x];
-      if (value === null || value === 'W') continue; // Skip empty and wildcard cells
+      if (value === null || value === 'W') continue; // Skip empty and wildcard cells (wildcards can't be moved)
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
@@ -63,8 +63,17 @@ function ensureAtLeastOneMergeablePair(grid: GridState): boolean {
           if (ny < 0 || ny >= size || nx < 0 || nx >= size) continue;
           const neighbor = grid[ny][nx];
           if (neighbor === null) continue;
-          // Wildcard matches any number, numbers need diff of 1
-          if (neighbor === 'W' || (typeof neighbor === 'number' && Math.abs(value - neighbor) === 1)) {
+
+          // Plus/Minus can merge with numbers
+          if ((value === '+' || value === '-') && typeof neighbor === 'number') {
+            return true;
+          }
+          // Numbers can merge with wildcards
+          if (typeof value === 'number' && neighbor === 'W') {
+            return true;
+          }
+          // Numbers can merge with numbers that differ by 1
+          if (typeof value === 'number' && typeof neighbor === 'number' && Math.abs(value - neighbor) === 1) {
             return true;
           }
         }
@@ -142,12 +151,12 @@ export function normalizeTileValues(grid: GridState): GridState {
     valueMap.set(oldValue, index + 1);
   });
 
-  // Apply mapping to create normalized grid (preserve wildcards)
+  // Apply mapping to create normalized grid (preserve wildcards and special tiles)
   return grid.map((row) =>
     row.map((cell) => {
       if (cell === null) return null;
-      if (cell === 'W') return 'W';
-      return valueMap.get(cell)!;
+      if (cell === 'W' || cell === '+' || cell === '-') return cell;
+      return valueMap.get(cell as number)!;
     })
   );
 }

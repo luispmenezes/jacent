@@ -98,17 +98,25 @@ export class Grid {
       return false;
     }
 
+    // Plus/Minus merge rules:
+    // - Plus and Minus tiles can be dragged TO number tiles (not wildcards)
+    // - They transform the number: plus increases, minus decreases (with wrapping)
+    // - Plus/Minus cannot merge with wildcards or each other
+    if ((tileA.isPlus() || tileA.isMinus()) && tileB.isNumberTile()) {
+      return true; // Plus or minus merges into number tile
+    }
+
     // Wildcard merge rules:
     // - Wildcards cannot be moved (checked in Tile.ts)
     // - Numbers can merge INTO wildcards
-    // - Wildcards cannot merge with other wildcards
-    if (tileB.isWildcard() && typeof tileA.digit === 'number') {
+    // - Wildcards cannot merge with other wildcards or special tiles
+    if (tileB.isWildcard() && tileA.isNumberTile()) {
       return true; // Number merges into wildcard
     }
 
     // Standard Jacent rule: tiles can merge if they differ by exactly 1
-    if (typeof tileA.digit === 'number' && typeof tileB.digit === 'number') {
-      return Math.abs(tileA.digit - tileB.digit) === 1;
+    if (tileA.isNumberTile() && tileB.isNumberTile()) {
+      return Math.abs((tileA.digit as number) - (tileB.digit as number)) === 1;
     }
 
     return false;

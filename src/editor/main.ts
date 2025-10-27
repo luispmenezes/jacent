@@ -69,10 +69,14 @@ function cycleCellValue(x: number, y: number): void {
   if (current === null) {
     currentGrid[y][x] = 1;
   } else if (current === 'W') {
-    currentGrid[y][x] = null;
-  } else if (current >= MAX_TILE_VALUE) {
+    currentGrid[y][x] = '+'; // After wildcard, cycle to plus
+  } else if (current === '+') {
+    currentGrid[y][x] = '-'; // After plus, cycle to minus
+  } else if (current === '-') {
+    currentGrid[y][x] = null; // After minus, cycle back to null
+  } else if (typeof current === 'number' && current >= MAX_TILE_VALUE) {
     currentGrid[y][x] = 'W'; // After 7, cycle to wildcard
-  } else {
+  } else if (typeof current === 'number') {
     currentGrid[y][x] = current + 1;
   }
   renderGrid();

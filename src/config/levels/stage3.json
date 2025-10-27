@@ -1,0 +1,96 @@
+{
+  "name": "Stage 3",
+  "levels": [
+    {
+      "gridSize": 2,
+      "par": 1,
+      "layout": [
+        ["-", 2],
+        [null, null]
+      ]
+    },
+    {
+      "gridSize": 2,
+      "par": 1,
+      "layout": [
+        ["-", 1],
+        [null, null]
+      ]
+    },
+    {
+      "gridSize": 3,
+      "par": 3,
+      "layout": [
+        [null, 3, null],
+        ["-", null, 2],
+        [null, 1, null]
+      ]
+    },
+    {
+      "gridSize": 2,
+      "par": 1,
+      "layout": [
+        ["+", 6],
+        [null, null]
+      ]
+    },
+    {
+      "gridSize": 3,
+      "par": 1,
+      "layout": [
+        [null, 7, null],
+        ["+", null, null],
+        [null, null, null]
+      ]
+    },
+    {
+      "gridSize": 3,
+      "par": 3,
+      "layout": [
+        ["-", 3, "+"],
+        [null, 2, null],
+        [null, null, null]
+      ]
+    },
+    {
+      "gridSize": 3,
+      "par": 4,
+      "layout": [
+        [2, null, 4],
+        ["+", 3, "-"],
+        [null, 5, null]
+      ]
+    },
+    {
+      "gridSize": 4,
+      "par": 6,
+      "layout": [
+        [null, 1, "+", 2],
+        [3, null, null, "-"],
+        ["-", 4, null, 3],
+        [null, 2, 1, null]
+      ]
+    },
+    {
+      "gridSize": 4,
+      "par": 7,
+      "layout": [
+        ["+", null, 2, "W"],
+        [3, null, "-", 1],
+        [null, "W", null, 4],
+        [2, "+", null, 3]
+      ]
+    },
+    {
+      "gridSize": 5,
+      "par": 10,
+      "layout": [
+        [null, 1, "W", "-", null],
+        [2, null, null, "+", 3],
+        ["-", null, 2, null, "W"],
+        [4, "+", null, null, 1],
+        [null, 3, "W", 2, null]
+      ]
+    }
+  ]
+}

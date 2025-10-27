@@ -1,9 +1,9 @@
-export type CellValue = number | 'W' | null;
+export type CellValue = number | 'W' | '+' | '-' | null;
 export type GridState = CellValue[][];
 
 // Compact state representation for efficient memoization
 interface TileState {
-  value: number | 'W';
+  value: number | 'W' | '+' | '-';
   row: number;
   col: number;
 }
@@ -47,6 +47,11 @@ function areTilesAdjacent(a: TileState, b: TileState): boolean {
 // Check if tiles can merge based on game rules
 function canTilesMerge(from: TileState, to: TileState): boolean {
   if (!areTilesAdjacent(from, to)) return false;
+
+  // Plus/Minus rules: can merge with number tiles only
+  if ((from.value === '+' || from.value === '-') && typeof to.value === 'number') {
+    return true;
+  }
 
   // Wildcard rules
   if (to.value === 'W' && typeof from.value === 'number') {
@@ -129,7 +134,21 @@ export function isSolvable(grid: GridState, moveLimit?: number): boolean {
             nextTiles.push(tiles[k]);
           }
         }
-        nextTiles.push({ value: from.value, row: to.row, col: to.col });
+
+        // Handle plus/minus transformation
+        let resultValue: number | 'W' | '+' | '-';
+        if (from.value === '+' && typeof to.value === 'number') {
+          // Plus: increase by 1 with wrapping (7 -> 1)
+          resultValue = (to.value % 7) + 1;
+        } else if (from.value === '-' && typeof to.value === 'number') {
+          // Minus: decrease by 1 with wrapping (1 -> 7)
+          resultValue = ((to.value - 2 + 7) % 7) + 1;
+        } else {
+          // Standard merge: dragged tile keeps its value
+          resultValue = from.value;
+        }
+
+        nextTiles.push({ value: resultValue, row: to.row, col: to.col });
 
         // Recursive call
         if (dfs(nextTiles, depth + 1)) {
@@ -173,7 +192,8 @@ export function getMinMoves(grid: GridState, moveLimit?: number): number | null 
     for (let i = 0; i < tiles.length; i++) {
       const from = tiles[i];
 
-      // Wildcards cannot be moved
+      // Wildcards cannot be moved (only merged into)
+      // Plus and minus tiles CAN be moved
       if (from.value === 'W') continue;
 
       for (let j = 0; j < tiles.length; j++) {
@@ -190,7 +210,21 @@ export function getMinMoves(grid: GridState, moveLimit?: number): number | null 
             nextTiles.push(tiles[k]);
           }
         }
-        nextTiles.push({ value: from.value, row: to.row, col: to.col });
+
+        // Handle plus/minus transformation
+        let resultValue: number | 'W' | '+' | '-';
+        if (from.value === '+' && typeof to.value === 'number') {
+          // Plus: increase by 1 with wrapping (7 -> 1)
+          resultValue = (to.value % 7) + 1;
+        } else if (from.value === '-' && typeof to.value === 'number') {
+          // Minus: decrease by 1 with wrapping (1 -> 7)
+          resultValue = ((to.value - 2 + 7) % 7) + 1;
+        } else {
+          // Standard merge: dragged tile keeps its value
+          resultValue = from.value;
+        }
+
+        nextTiles.push({ value: resultValue, row: to.row, col: to.col });
 
         // Check if solved
         if (nextTiles.length === 1) {

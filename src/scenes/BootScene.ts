@@ -50,7 +50,7 @@ export class BootScene extends Phaser.Scene {
       endFrame: 6, // Load frames 0-6 (tiles 1-7)
     });
 
-    // Load special tiles spritesheet (wildcard at index 2)
+    // Load special tiles spritesheet (minus at 0, plus at 1, wildcard at 2)
     this.load.spritesheet('special-tiles-sheet', AssetConfig.sprites.specialTiles.path, {
       frameWidth: 24,
       frameHeight: 24,
@@ -95,8 +95,27 @@ export class BootScene extends Phaser.Scene {
       }
     }
 
-    // Extract wildcard tile from special tiles spritesheet (index 2)
+    // Extract special tiles from special tiles spritesheet
+    // Minus (index 0), Plus (index 1), Wildcard (index 2)
     const specialTilesTexture = this.textures.get('special-tiles-sheet');
+
+    // Minus tile (index 0)
+    const minusFrame = specialTilesTexture.get(0);
+    const minusCanvas = this.textures.createCanvas('tile--', minusFrame.width, minusFrame.height);
+    if (minusCanvas) {
+      minusCanvas.drawFrame('special-tiles-sheet', 0);
+      minusCanvas.update();
+    }
+
+    // Plus tile (index 1)
+    const plusFrame = specialTilesTexture.get(1);
+    const plusCanvas = this.textures.createCanvas('tile-+', plusFrame.width, plusFrame.height);
+    if (plusCanvas) {
+      plusCanvas.drawFrame('special-tiles-sheet', 1);
+      plusCanvas.update();
+    }
+
+    // Wildcard tile (index 2)
     const wildcardFrame = specialTilesTexture.get(2);
     const wildcardCanvas = this.textures.createCanvas('tile-W', wildcardFrame.width, wildcardFrame.height);
     if (wildcardCanvas) {
