@@ -1,6 +1,6 @@
 import { GridState, cloneGrid, countTiles, isSolvable } from './solver';
 
-type CellValue = number | 'W' | null;
+type CellValue = number | 'W' | '+' | '-' | null;
 
 interface GenerateOptions {
   gridSize: number;
@@ -9,6 +9,8 @@ interface GenerateOptions {
   maxValue?: number;
   maxAttempts?: number;
   wildcardCount?: number;
+  plusCount?: number;
+  minusCount?: number;
 }
 
 export function createEmptyGrid(size: number): GridState {
@@ -19,7 +21,15 @@ function getRandomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function placeRandomTiles(grid: GridState, tileCount: number, minValue: number, maxValue: number, wildcardCount: number = 0): GridState {
+function placeRandomTiles(
+  grid: GridState,
+  tileCount: number,
+  minValue: number,
+  maxValue: number,
+  wildcardCount: number = 0,
+  plusCount: number = 0,
+  minusCount: number = 0
+): GridState {
   const size = grid.length;
   const availablePositions = [] as Array<{ x: number; y: number }>;
 
@@ -38,8 +48,22 @@ function placeRandomTiles(grid: GridState, tileCount: number, minValue: number, 
     next[y][x] = 'W';
   }
 
+  // Place plus tiles
+  for (let i = 0; i < plusCount && availablePositions.length > 0; i++) {
+    const index = getRandomInt(0, availablePositions.length - 1);
+    const { x, y } = availablePositions.splice(index, 1)[0];
+    next[y][x] = '+';
+  }
+
+  // Place minus tiles
+  for (let i = 0; i < minusCount && availablePositions.length > 0; i++) {
+    const index = getRandomInt(0, availablePositions.length - 1);
+    const { x, y } = availablePositions.splice(index, 1)[0];
+    next[y][x] = '-';
+  }
+
   // Place numbered tiles
-  const numericTiles = tileCount - wildcardCount;
+  const numericTiles = tileCount - wildcardCount - plusCount - minusCount;
   for (let i = 0; i < numericTiles && availablePositions.length > 0; i++) {
     const index = getRandomInt(0, availablePositions.length - 1);
     const { x, y } = availablePositions.splice(index, 1)[0];
@@ -68,6 +92,9 @@ function ensureAtLeastOneMergeablePair(grid: GridState): boolean {
           if ((value === '+' || value === '-') && typeof neighbor === 'number') {
             return true;
           }
+          if (typeof value === 'number' && (neighbor === '+' || neighbor === '-')) {
+            return true;
+          }
           // Numbers can merge with wildcards
           if (typeof value === 'number' && neighbor === 'W') {
             return true;
@@ -84,13 +111,23 @@ function ensureAtLeastOneMergeablePair(grid: GridState): boolean {
 }
 
 export function generateLevel(options: GenerateOptions): GridState | null {
-  const { gridSize, tileCount, minValue = 1, maxValue = 7, maxAttempts = 300, wildcardCount = 0 } = options;
+  const {
+    gridSize,
+    tileCount,
+    minValue = 1,
+    maxValue = 7,
+    maxAttempts = 300,
+    wildcardCount = 0,
+    plusCount = 0,
+    minusCount = 0,
+  } = options;
   if (tileCount <= 0 || tileCount > gridSize * gridSize) {
     return null;
   }
 
-  if (wildcardCount > tileCount) {
-    return null; // Can't have more wildcards than total tiles
+  const specialTotal = wildcardCount + plusCount + minusCount;
+  if (specialTotal > tileCount) {
+    return null; // Can't have more special tiles than total tiles
   }
 
   // Reduce max attempts for larger boards to prevent long hangs
@@ -98,7 +135,7 @@ export function generateLevel(options: GenerateOptions): GridState | null {
 
   for (let attempt = 0; attempt < adjustedMaxAttempts; attempt++) {
     const base = createEmptyGrid(gridSize);
-    const seeded = placeRandomTiles(base, tileCount, minValue, maxValue, wildcardCount);
+    const seeded = placeRandomTiles(base, tileCount, minValue, maxValue, wildcardCount, plusCount, minusCount);
 
     if (!ensureAtLeastOneMergeablePair(seeded)) {
       continue;

@@ -9,6 +9,7 @@ export class Tile extends Phaser.GameObjects.Sprite {
   private dragStartX: number = 0;
   private dragStartY: number = 0;
   private highlightGraphics: Phaser.GameObjects.Graphics | null = null;
+  private pauseTimer?: Phaser.Time.TimerEvent;
 
   constructor(
     scene: Phaser.Scene,
@@ -18,7 +19,19 @@ export class Tile extends Phaser.GameObjects.Sprite {
     gridX: number,
     gridY: number
   ) {
-    super(scene, x, y, `tile-${digit as TileFrame}`);
+    // Use appropriate spritesheet for animated tiles
+    let texture: string;
+    if (digit === 'W') {
+      texture = 'wildcard-sheet';
+    } else if (digit === '+') {
+      texture = 'plus-sheet';
+    } else if (digit === '-') {
+      texture = 'minus-sheet';
+    } else {
+      texture = `tile-${digit as TileFrame}`;
+    }
+
+    super(scene, x, y, texture);
     this.digit = digit;
     this.gridX = gridX;
     this.gridY = gridY;
@@ -31,9 +44,41 @@ export class Tile extends Phaser.GameObjects.Sprite {
     this.setInteractive({ draggable: !isWildcard });
     this.setOrigin(0.5, 0.5);
 
+    // Set up animations
+    if (digit === 'W') {
+      this.play('wildcard-anim');
+    } else if (digit === '+') {
+      this.play('plus-anim');
+      this.setupPauseOnFrame6();
+    } else if (digit === '-') {
+      this.play('minus-anim');
+      this.setupPauseOnFrame6();
+    }
+
     if (!isWildcard) {
       this.setupDragEvents();
     }
+  }
+
+  private setupPauseOnFrame6(): void {
+    this.on('animationupdate', (_anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
+      // When we reach frame 6, pause for 3 seconds
+      if (frame.index === 6 && !this.anims.isPaused) {
+        this.anims.pause();
+
+        // Clear any existing timer
+        if (this.pauseTimer) {
+          this.pauseTimer.destroy();
+        }
+
+        // Resume after 3 seconds
+        this.pauseTimer = this.scene.time.delayedCall(3000, () => {
+          if (this.anims && !this.anims.isPlaying) {
+            this.anims.resume();
+          }
+        });
+      }
+    });
   }
 
   private setupDragEvents(): void {
@@ -92,7 +137,32 @@ export class Tile extends Phaser.GameObjects.Sprite {
 
   public setDigit(digit: number | 'W' | '+' | '-'): void {
     this.digit = digit;
-    this.setTexture(`tile-${digit as TileFrame}`);
+
+    // Clean up any existing pause timer
+    if (this.pauseTimer) {
+      this.pauseTimer.destroy();
+      this.pauseTimer = undefined;
+    }
+
+    if (digit === 'W') {
+      // Switch to wildcard animation
+      this.setTexture('wildcard-sheet');
+      this.play('wildcard-anim');
+    } else if (digit === '+') {
+      // Switch to plus animation
+      this.setTexture('plus-sheet');
+      this.play('plus-anim');
+      this.setupPauseOnFrame6();
+    } else if (digit === '-') {
+      // Switch to minus animation
+      this.setTexture('minus-sheet');
+      this.play('minus-anim');
+      this.setupPauseOnFrame6();
+    } else {
+      // Switch to static tile texture
+      this.stop(); // Stop any animation
+      this.setTexture(`tile-${digit as TileFrame}`);
+    }
   }
 
   public isWildcard(): boolean {
@@ -138,6 +208,9 @@ export class Tile extends Phaser.GameObjects.Sprite {
     this.clearHighlight();
     if (this.highlightGraphics) {
       this.highlightGraphics.destroy();
+    }
+    if (this.pauseTimer) {
+      this.pauseTimer.destroy();
     }
     super.destroy(fromScene);
   }

@@ -11,10 +11,10 @@
     },
     {
       "gridSize": 2,
-      "par": 1,
+      "par": 2,
       "layout": [
-        ["-", 1],
-        [null, null]
+        ["-",2],
+        [null,4]
       ]
     },
     {
@@ -28,10 +28,10 @@
     },
     {
       "gridSize": 2,
-      "par": 1,
+      "par": 0,
       "layout": [
-        ["+", 6],
-        [null, null]
+        ["+",6],
+        [null,1]
       ]
     },
     {

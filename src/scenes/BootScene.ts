@@ -57,6 +57,27 @@ export class BootScene extends Phaser.Scene {
       endFrame: 2, // Load frames 0-2
     });
 
+    // Load animated wildcard spritesheet (7 frames)
+    this.load.spritesheet('wildcard-sheet', AssetConfig.sprites.wildcard.path, {
+      frameWidth: 24,
+      frameHeight: 24,
+      endFrame: 6, // Load frames 0-6 (7 frames total)
+    });
+
+    // Load animated plus spritesheet (7 frames)
+    this.load.spritesheet('plus-sheet', AssetConfig.sprites.plus.path, {
+      frameWidth: 24,
+      frameHeight: 24,
+      endFrame: 6, // Load frames 0-6 (7 frames total)
+    });
+
+    // Load animated minus spritesheet (7 frames)
+    this.load.spritesheet('minus-sheet', AssetConfig.sprites.minus.path, {
+      frameWidth: 24,
+      frameHeight: 24,
+      endFrame: 6, // Load frames 0-6 (7 frames total)
+    });
+
     // Load empty tile sprite
     this.load.image('tile-empty', AssetConfig.sprites.emptyTile.path);
 
@@ -115,13 +136,37 @@ export class BootScene extends Phaser.Scene {
       plusCanvas.update();
     }
 
-    // Wildcard tile (index 2)
+    // Wildcard tile (index 2) - keep static version for backwards compatibility
     const wildcardFrame = specialTilesTexture.get(2);
     const wildcardCanvas = this.textures.createCanvas('tile-W', wildcardFrame.width, wildcardFrame.height);
     if (wildcardCanvas) {
       wildcardCanvas.drawFrame('special-tiles-sheet', 2);
       wildcardCanvas.update();
     }
+
+    // Create wildcard animation (7 frames at 10 fps, loops continuously)
+    this.anims.create({
+      key: 'wildcard-anim',
+      frames: this.anims.generateFrameNumbers('wildcard-sheet', { start: 0, end: 6 }),
+      frameRate: 10,
+      repeat: -1, // Loop forever
+    });
+
+    // Create plus animation (7 frames at 10 fps, pauses on frame 6)
+    this.anims.create({
+      key: 'plus-anim',
+      frames: this.anims.generateFrameNumbers('plus-sheet', { start: 0, end: 6 }),
+      frameRate: 10,
+      repeat: -1, // Loop forever
+    });
+
+    // Create minus animation (7 frames at 10 fps, pauses on frame 6)
+    this.anims.create({
+      key: 'minus-anim',
+      frames: this.anims.generateFrameNumbers('minus-sheet', { start: 0, end: 6 }),
+      frameRate: 10,
+      repeat: -1, // Loop forever
+    });
 
     // Empty tile is already loaded as 'tile-empty' image, no extraction needed
 

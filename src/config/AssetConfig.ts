@@ -8,6 +8,18 @@ export const AssetConfig = {
       key: 'special-tiles',
       path: 'assets/sprites/special-tiles.png', // Spritesheet: minus (0), plus (1), wildcard (2)
     },
+    wildcard: {
+      key: 'wildcard',
+      path: 'assets/sprites/wildcard.png', // 7-frame animated wildcard
+    },
+    plus: {
+      key: 'plus',
+      path: 'assets/sprites/plus.png', // 7-frame animated plus
+    },
+    minus: {
+      key: 'minus',
+      path: 'assets/sprites/minus.png', // 7-frame animated minus
+    },
     emptyTile: {
       key: 'empty-tile',
       path: 'assets/sprites/empty-tile.png', // Empty tile sprite

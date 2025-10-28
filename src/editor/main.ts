@@ -15,6 +15,9 @@ let wildcardSlider: HTMLInputElement | null = null;
 let wildcardSliderValueLabel: HTMLSpanElement | null = null;
 let stageSelect: HTMLSelectElement | null = null;
 let levelSelect: HTMLSelectElement | null = null;
+let gridSizeSelect: HTMLSelectElement | null = null;
+let plusInput: HTMLInputElement | null = null;
+let minusInput: HTMLInputElement | null = null;
 
 const root = document.getElementById('editor-root');
 if (!root) {
@@ -24,15 +27,34 @@ if (!root) {
 const gridContainer = document.createElement('div');
 gridContainer.className = 'grid-container';
 
-const sidebar = document.createElement('div');
+const sidebar = document.createElement('aside');
 sidebar.className = 'sidebar';
 
 const statusContainer = document.createElement('div');
 statusContainer.className = 'status';
 
-root.appendChild(gridContainer);
+const mainColumn = document.createElement('div');
+mainColumn.className = 'main-column';
+
+const header = document.createElement('div');
+header.className = 'main-header';
+
+const title = document.createElement('h1');
+title.textContent = 'Level Editor';
+
+const subtitle = document.createElement('span');
+subtitle.className = 'main-subtitle';
+subtitle.textContent = 'Click tiles to cycle values (1 → 7 → W → + → - → empty).';
+
+header.appendChild(title);
+header.appendChild(subtitle);
+
+mainColumn.appendChild(header);
+mainColumn.appendChild(statusContainer);
+mainColumn.appendChild(gridContainer);
+
+root.appendChild(mainColumn);
 root.appendChild(sidebar);
-root.appendChild(statusContainer);
 
 function createSelect(label: string, options: Array<{ label: string; value: number }>, onChange: (value: number) => void): HTMLDivElement {
   const wrapper = document.createElement('div');
@@ -64,6 +86,75 @@ function createButton(label: string, onClick: () => void, variant: 'primary' | '
   return button;
 }
 
+function getTileBudget(): number {
+  if (tileSlider) {
+    return Number(tileSlider.value);
+  }
+  return currentGrid.length * currentGrid.length;
+}
+
+function clampNumberInput(input: HTMLInputElement, min: number, max: number): number {
+  const parsed = Math.floor(Number(input.value));
+  const clamped = Math.min(Math.max(isNaN(parsed) ? min : parsed, min), max);
+  input.value = clamped.toString();
+  return clamped;
+}
+
+function enforceSpecialTileLimits(): void {
+  const max = getTileBudget();
+  let wildcard = wildcardSlider ? Number(wildcardSlider.value) : 0;
+  let plus = plusInput ? Math.max(0, Math.min(Number(plusInput.value), max)) : 0;
+  let minus = minusInput ? Math.max(0, Math.min(Number(minusInput.value), max)) : 0;
+
+  if (plusInput) {
+    plusInput.max = max.toString();
+    if (Number(plusInput.value) !== plus) {
+      plusInput.value = Math.max(0, plus).toString();
+    }
+  }
+  if (minusInput) {
+    minusInput.max = max.toString();
+    if (Number(minusInput.value) !== minus) {
+      minusInput.value = Math.max(0, minus).toString();
+    }
+  }
+  if (wildcardSlider) {
+    wildcardSlider.max = max.toString();
+    if (Number(wildcardSlider.value) > max) {
+      wildcardSlider.value = max.toString();
+      if (wildcardSliderValueLabel) {
+        wildcardSliderValueLabel.textContent = wildcardSlider.value;
+      }
+      wildcard = Number(wildcardSlider.value);
+    }
+  }
+
+  let overflow = wildcard + plus + minus - max;
+  if (overflow > 0 && minusInput) {
+    const newMinus = Math.max(0, minus - overflow);
+    overflow -= minus - newMinus;
+    minus = newMinus;
+    minusInput.value = newMinus.toString();
+  }
+  if (overflow > 0 && plusInput) {
+    const newPlus = Math.max(0, plus - overflow);
+    overflow -= plus - newPlus;
+    plus = newPlus;
+    plusInput.value = newPlus.toString();
+  }
+  if (overflow > 0 && wildcardSlider) {
+    const newWildcard = Math.max(0, wildcard - overflow);
+    wildcardSlider.value = newWildcard.toString();
+    if (wildcardSliderValueLabel) {
+      wildcardSliderValueLabel.textContent = wildcardSlider.value;
+    }
+  }
+
+  if (wildcardSliderValueLabel) {
+    wildcardSliderValueLabel.textContent = wildcardSlider ? wildcardSlider.value : '0';
+  }
+}
+
 function cycleCellValue(x: number, y: number): void {
   const current = currentGrid[y][x];
   if (current === null) {
@@ -86,6 +177,8 @@ function cycleCellValue(x: number, y: number): void {
 function renderGrid(): void {
   gridContainer.innerHTML = '';
   gridContainer.style.setProperty('--grid-size', currentGrid.length.toString());
+  const cellSize = Math.min(76, Math.floor(360 / currentGrid.length));
+  gridContainer.style.setProperty('--cell-size', `${cellSize}px`);
 
   for (let y = 0; y < currentGrid.length; y++) {
     for (let x = 0; x < currentGrid[y].length; x++) {
@@ -113,16 +206,43 @@ function updateStatus(message?: string): void {
   const minMoves = solvable ? getMinMoves(currentGrid) : null;
   statusContainer.innerHTML = '';
 
-  const info = document.createElement('div');
-  const movesText = minMoves !== null ? ` • Par/Min Moves: <strong>${minMoves}</strong>` : '';
-  info.innerHTML = `Tiles: <strong>${tiles}</strong> • Solvable: <strong class="${solvable ? 'yes' : 'no'}">${solvable ? 'Yes' : 'No'}</strong>${movesText}`;
-  statusContainer.appendChild(info);
+  const metrics = document.createElement('div');
+  metrics.className = 'status-metrics';
+
+  const tilesMetric = document.createElement('div');
+  tilesMetric.className = 'status-metric';
+  tilesMetric.innerHTML = `<span class="metric-label">Tiles</span><span class="metric-value">${tiles}</span>`;
+  metrics.appendChild(tilesMetric);
+
+  const solvableMetric = document.createElement('div');
+  solvableMetric.className = `status-metric ${solvable ? 'metric-positive' : 'metric-negative'}`;
+  solvableMetric.innerHTML = `<span class="metric-label">Solvable</span><span class="metric-value">${solvable ? 'Yes' : 'No'}</span>`;
+  metrics.appendChild(solvableMetric);
+
+  if (minMoves !== null) {
+    const movesMetric = document.createElement('div');
+    movesMetric.className = 'status-metric';
+    movesMetric.innerHTML = `<span class="metric-label">Min Moves</span><span class="metric-value">${minMoves}</span>`;
+    metrics.appendChild(movesMetric);
+  }
+
+  statusContainer.appendChild(metrics);
+
+  const jsonGroup = document.createElement('div');
+  jsonGroup.className = 'status-json';
+
+  const jsonLabel = document.createElement('label');
+  jsonLabel.textContent = 'Level JSON';
+  jsonGroup.appendChild(jsonLabel);
 
   const jsonTextarea = document.createElement('textarea');
   jsonTextarea.value = toJsonLevel(currentGrid, minMoves ?? 0);
   jsonTextarea.readOnly = true;
-  jsonTextarea.rows = Math.max(6, currentGrid.length + 4);
-  statusContainer.appendChild(jsonTextarea);
+  const suggestedRows = Math.max(5, currentGrid.length + 2);
+  jsonTextarea.rows = Math.min(8, suggestedRows);
+  jsonGroup.appendChild(jsonTextarea);
+
+  statusContainer.appendChild(jsonGroup);
 
   const messageEl = document.createElement('div');
   messageEl.className = 'status-message';
@@ -207,6 +327,21 @@ function setGridSize(size: number): void {
       wildcardSliderValueLabel.textContent = wildcardSlider.value;
     }
   }
+  if (plusInput) {
+    const currentTileCount = tileSlider ? Number(tileSlider.value) : maxTiles;
+    plusInput.max = currentTileCount.toString();
+    if (Number(plusInput.value) > currentTileCount) {
+      plusInput.value = currentTileCount.toString();
+    }
+  }
+  if (minusInput) {
+    const currentTileCount = tileSlider ? Number(tileSlider.value) : maxTiles;
+    minusInput.max = currentTileCount.toString();
+    if (Number(minusInput.value) > currentTileCount) {
+      minusInput.value = currentTileCount.toString();
+    }
+  }
+  enforceSpecialTileLimits();
   renderGrid();
   updateStatus('Grid resized');
 }
@@ -252,13 +387,13 @@ function loadStageLevel(stageIndex: number, levelIndex: number): void {
   currentGrid = level.layout.map(row => [...row]);
 
   // Update grid size selector
-  const sizeSelect = document.querySelector('.control select') as HTMLSelectElement | null;
-  if (sizeSelect) {
-    sizeSelect.value = level.gridSize.toString();
+  if (gridSizeSelect) {
+    gridSizeSelect.value = level.gridSize.toString();
   }
 
   renderGrid();
   updateStatus(`Loaded ${stage.name} - Level ${levelIndex + 1}`);
+  enforceSpecialTileLimits();
 }
 
 function updateLevelSelect(): void {
@@ -279,11 +414,16 @@ function updateLevelSelect(): void {
 }
 
 function createSidebarControls(): void {
-  const header = document.createElement('h2');
-  header.textContent = 'Level Editor';
-  sidebar.appendChild(header);
+  const heading = document.createElement('h2');
+  heading.textContent = 'Controls';
+  sidebar.appendChild(heading);
 
-  // Stage selector
+  const stageSection = document.createElement('section');
+  stageSection.className = 'sidebar-section';
+
+  const stageRow = document.createElement('div');
+  stageRow.className = 'control-row';
+
   const stageWrapper = document.createElement('div');
   stageWrapper.className = 'control';
   const stageLabel = document.createElement('label');
@@ -303,9 +443,7 @@ function createSidebarControls(): void {
   });
   stageWrapper.appendChild(stageLabel);
   stageWrapper.appendChild(stageSelect);
-  sidebar.appendChild(stageWrapper);
 
-  // Level selector
   const levelWrapper = document.createElement('div');
   levelWrapper.className = 'control';
   const levelLabel = document.createElement('label');
@@ -313,25 +451,28 @@ function createSidebarControls(): void {
   levelSelect = document.createElement('select');
   levelWrapper.appendChild(levelLabel);
   levelWrapper.appendChild(levelSelect);
-  sidebar.appendChild(levelWrapper);
 
-  // Initialize level select
+  stageRow.appendChild(stageWrapper);
+  stageRow.appendChild(levelWrapper);
+  stageSection.appendChild(stageRow);
+
   updateLevelSelect();
 
-  // Load level button
   const loadButton = createButton('Load Selected Level', () => {
     if (stageSelect && levelSelect) {
       loadStageLevel(Number(stageSelect.value), Number(levelSelect.value));
     }
   }, 'primary');
-  sidebar.appendChild(loadButton);
+  loadButton.classList.add('btn-block');
+  stageSection.appendChild(loadButton);
 
-  // Separator
-  const separator = document.createElement('hr');
-  separator.style.margin = '20px 0';
-  separator.style.border = 'none';
-  separator.style.borderTop = '1px solid #ddd';
-  sidebar.appendChild(separator);
+  sidebar.appendChild(stageSection);
+
+  const gridSection = document.createElement('section');
+  gridSection.className = 'sidebar-section';
+  const gridHeading = document.createElement('h3');
+  gridHeading.textContent = 'Grid & Generation';
+  gridSection.appendChild(gridHeading);
 
   const sizeControl = createSelect(
     'Grid Size',
@@ -341,28 +482,37 @@ function createSidebarControls(): void {
     }),
     (value) => setGridSize(value)
   );
-  (sizeControl.querySelector('select') as HTMLSelectElement).value = currentGrid.length.toString();
-  sidebar.appendChild(sizeControl);
+  gridSizeSelect = sizeControl.querySelector('select') as HTMLSelectElement;
+  gridSizeSelect.value = currentGrid.length.toString();
+  gridSection.appendChild(sizeControl);
 
   const tileSliderWrapper = document.createElement('div');
-  tileSliderWrapper.className = 'control';
+  tileSliderWrapper.className = 'range-control';
+  const tileLabelRow = document.createElement('div');
+  tileLabelRow.className = 'control-label-row';
   const tileLabel = document.createElement('label');
-  tileLabel.textContent = 'Tile Count (for auto-generate)';
+  const tileSliderId = 'tile-slider';
+  tileLabel.htmlFor = tileSliderId;
+  tileLabel.textContent = 'Tiles';
+  tileSliderValueLabel = document.createElement('span');
+  tileSliderValueLabel.className = 'range-value';
+  tileSliderWrapper.appendChild(tileLabelRow);
+  tileLabelRow.appendChild(tileLabel);
+  tileLabelRow.appendChild(tileSliderValueLabel);
   tileSlider = document.createElement('input');
+  tileSlider.id = tileSliderId;
   tileSlider.type = 'range';
   tileSlider.min = '1';
   tileSlider.max = (currentGrid.length * currentGrid.length).toString();
   tileSlider.value = '6';
-  tileSliderValueLabel = document.createElement('span');
   tileSliderValueLabel.textContent = tileSlider.value;
-
   tileSlider.addEventListener('input', () => {
+    const sliderValue = tileSlider!.value;
     if (tileSliderValueLabel) {
-      tileSliderValueLabel.textContent = tileSlider!.value;
+      tileSliderValueLabel.textContent = sliderValue;
     }
-    // Update wildcard slider max
-    if (wildcardSlider && tileSlider) {
-      const maxWildcards = Number(tileSlider.value);
+    if (wildcardSlider) {
+      const maxWildcards = Number(sliderValue);
       wildcardSlider.max = maxWildcards.toString();
       if (Number(wildcardSlider.value) > maxWildcards) {
         wildcardSlider.value = maxWildcards.toString();
@@ -371,48 +521,102 @@ function createSidebarControls(): void {
         }
       }
     }
+    if (plusInput) {
+      plusInput.max = sliderValue;
+    }
+    if (minusInput) {
+      minusInput.max = sliderValue;
+    }
+    enforceSpecialTileLimits();
   });
-
-  tileSliderWrapper.appendChild(tileLabel);
   tileSliderWrapper.appendChild(tileSlider);
-  tileSliderWrapper.appendChild(tileSliderValueLabel);
-  sidebar.appendChild(tileSliderWrapper);
+  gridSection.appendChild(tileSliderWrapper);
 
-  // Wildcard count slider
   const wildcardSliderWrapper = document.createElement('div');
-  wildcardSliderWrapper.className = 'control';
+  wildcardSliderWrapper.className = 'range-control';
+  const wildcardLabelRow = document.createElement('div');
+  wildcardLabelRow.className = 'control-label-row';
   const wildcardLabel = document.createElement('label');
-  wildcardLabel.textContent = 'Wildcard Count (in generated tiles)';
+  const wildcardSliderId = 'wildcard-slider';
+  wildcardLabel.htmlFor = wildcardSliderId;
+  wildcardLabel.textContent = 'Wildcards';
+  wildcardSliderValueLabel = document.createElement('span');
+  wildcardSliderValueLabel.className = 'range-value';
+  wildcardLabelRow.appendChild(wildcardLabel);
+  wildcardLabelRow.appendChild(wildcardSliderValueLabel);
   wildcardSlider = document.createElement('input');
+  wildcardSlider.id = wildcardSliderId;
   wildcardSlider.type = 'range';
   wildcardSlider.min = '0';
   wildcardSlider.max = tileSlider.value;
   wildcardSlider.value = '0';
-  wildcardSliderValueLabel = document.createElement('span');
   wildcardSliderValueLabel.textContent = wildcardSlider.value;
-
   wildcardSlider.addEventListener('input', () => {
+    const value = wildcardSlider!.value;
     if (wildcardSliderValueLabel) {
-      wildcardSliderValueLabel.textContent = wildcardSlider!.value;
+      wildcardSliderValueLabel.textContent = value;
     }
+    enforceSpecialTileLimits();
   });
-
-  wildcardSliderWrapper.appendChild(wildcardLabel);
+  wildcardSliderWrapper.appendChild(wildcardLabelRow);
   wildcardSliderWrapper.appendChild(wildcardSlider);
-  wildcardSliderWrapper.appendChild(wildcardSliderValueLabel);
-  sidebar.appendChild(wildcardSliderWrapper);
+  gridSection.appendChild(wildcardSliderWrapper);
+
+  const specialRow = document.createElement('div');
+  specialRow.className = 'control-row';
+
+  const plusControl = document.createElement('div');
+  plusControl.className = 'control';
+  const plusLabel = document.createElement('label');
+  plusLabel.textContent = 'Plus Tiles';
+  plusInput = document.createElement('input');
+  plusInput.type = 'number';
+  plusInput.min = '0';
+  plusInput.step = '1';
+  plusInput.value = '0';
+  plusInput.max = tileSlider.value;
+  plusInput.addEventListener('input', () => {
+    if (!plusInput) return;
+    clampNumberInput(plusInput, 0, getTileBudget());
+    enforceSpecialTileLimits();
+  });
+  plusControl.appendChild(plusLabel);
+  plusControl.appendChild(plusInput);
+
+  const minusControl = document.createElement('div');
+  minusControl.className = 'control';
+  const minusLabel = document.createElement('label');
+  minusLabel.textContent = 'Minus Tiles';
+  minusInput = document.createElement('input');
+  minusInput.type = 'number';
+  minusInput.min = '0';
+  minusInput.step = '1';
+  minusInput.value = '0';
+  minusInput.max = tileSlider.value;
+  minusInput.addEventListener('input', () => {
+    if (!minusInput) return;
+    clampNumberInput(minusInput, 0, getTileBudget());
+    enforceSpecialTileLimits();
+  });
+  minusControl.appendChild(minusLabel);
+  minusControl.appendChild(minusInput);
+
+  specialRow.appendChild(plusControl);
+  specialRow.appendChild(minusControl);
+  gridSection.appendChild(specialRow);
 
   const generateButton = createButton('Auto Generate', () => {
+    enforceSpecialTileLimits();
     const desiredTiles = tileSlider ? Number(tileSlider.value) : currentGrid.length;
     const wildcardCount = wildcardSlider ? Number(wildcardSlider.value) : 0;
+    const plusCount = plusInput ? Number(plusInput.value) : 0;
+    const minusCount = minusInput ? Number(minusInput.value) : 0;
     const gridSize = currentGrid.length;
 
-    // Adjust max attempts based on grid size to prevent hanging
     const maxAttempts = gridSize >= 5 ? 50 : (gridSize >= 4 ? 200 : 800);
 
     updateStatus('Generating puzzle...');
 
-    // Use setTimeout to allow UI to update
     setTimeout(() => {
       const startTime = Date.now();
       const generated = generateLevel({
@@ -422,6 +626,8 @@ function createSidebarControls(): void {
         maxValue: 7,
         maxAttempts: maxAttempts,
         wildcardCount: wildcardCount,
+        plusCount: plusCount,
+        minusCount: minusCount,
       });
       const elapsed = Date.now() - startTime;
 
@@ -434,32 +640,55 @@ function createSidebarControls(): void {
       }
     }, 10);
   });
-  sidebar.appendChild(generateButton);
+  generateButton.classList.add('btn-block');
+  gridSection.appendChild(generateButton);
 
-  const checkButton = createButton('Check Solvable', () => {
+  sidebar.appendChild(gridSection);
+
+  const toolsSection = document.createElement('section');
+  toolsSection.className = 'sidebar-section';
+  const toolsHeading = document.createElement('h3');
+  toolsHeading.textContent = 'Board Tools';
+  toolsSection.appendChild(toolsHeading);
+
+  const toolsRow = document.createElement('div');
+  toolsRow.className = 'button-row';
+
+  const checkButton = createButton('Check', () => {
     const solvable = isSolvable(currentGrid);
     updateStatus(solvable ? 'Puzzle is solvable' : 'No solution found');
   }, 'secondary');
-  sidebar.appendChild(checkButton);
 
-  const normalizeButton = createButton('Normalize Tiles', () => {
+  const normalizeButton = createButton('Normalize', () => {
     currentGrid = normalizeTileValues(currentGrid);
     renderGrid();
-    updateStatus('Tiles normalized to consecutive values starting from 1');
+    updateStatus('Tiles normalized');
   }, 'secondary');
-  sidebar.appendChild(normalizeButton);
 
-  const clearButton = createButton('Clear Grid', clearGrid, 'secondary');
-  sidebar.appendChild(clearButton);
+  const clearButton = createButton('Clear', clearGrid, 'secondary');
 
-  const importWrapper = document.createElement('div');
-  importWrapper.className = 'control';
-  const importLabel = document.createElement('label');
-  importLabel.textContent = 'Import Level';
+  toolsRow.appendChild(checkButton);
+  toolsRow.appendChild(normalizeButton);
+  toolsRow.appendChild(clearButton);
+  toolsSection.appendChild(toolsRow);
+  sidebar.appendChild(toolsSection);
+
+  const ioSection = document.createElement('section');
+  ioSection.className = 'sidebar-section';
+  const ioHeading = document.createElement('h3');
+  ioHeading.textContent = 'Import / Export';
+  ioSection.appendChild(ioHeading);
+
   const importTextarea = document.createElement('textarea');
-  importTextarea.rows = 8;
-  importTextarea.placeholder = 'Paste level definition:\n{\n  "gridSize": 3,\n  "par": 5,\n  "layout": [...]\n}';
-  const importButton = createButton('Load Level', () => {
+  importTextarea.rows = 6;
+  importTextarea.placeholder = 'Paste level JSON...';
+  importTextarea.setAttribute('aria-label', 'Level JSON');
+  importTextarea.spellcheck = false;
+
+  const ioButtons = document.createElement('div');
+  ioButtons.className = 'button-row';
+
+  const importButton = createButton('Load JSON', () => {
     try {
       const parsed = deserializeGrid(importTextarea.value);
       const size = parsed.length;
@@ -467,75 +696,81 @@ function createSidebarControls(): void {
         throw new Error('Grid size out of range');
       }
       currentGrid = normalizeTileValues(parsed);
-      (sizeControl.querySelector('select') as HTMLSelectElement).value = size.toString();
+      if (gridSizeSelect) {
+        gridSizeSelect.value = size.toString();
+      }
       renderGrid();
-      updateStatus('Level imported and normalized');
+      updateStatus('Level imported');
+      enforceSpecialTileLimits();
     } catch (error) {
       if (error instanceof Error) {
         updateStatus(`Import failed: ${error.message}`);
       } else {
-        updateStatus('Import failed: unknown error');
+        updateStatus('Import failed');
       }
     }
   });
+  importButton.classList.add('btn-secondary');
 
-  importWrapper.appendChild(importLabel);
-  importWrapper.appendChild(importTextarea);
-  importWrapper.appendChild(importButton);
-  sidebar.appendChild(importWrapper);
-
-  const exportJsonButton = createButton('Copy Level to Clipboard', () => {
+  const exportJsonButton = createButton('Copy JSON', () => {
     const minMoves = getMinMoves(currentGrid);
     copyToClipboard(toJsonLevel(currentGrid, minMoves ?? 0));
-    updateStatus('Level definition copied to clipboard');
+    updateStatus('Level copied');
   }, 'secondary');
-  sidebar.appendChild(exportJsonButton);
 
-  // Separator
-  const separator2 = document.createElement('hr');
-  separator2.style.margin = '20px 0';
-  separator2.style.border = 'none';
-  separator2.style.borderTop = '1px solid #ddd';
-  sidebar.appendChild(separator2);
+  ioButtons.appendChild(importButton);
+  ioButtons.appendChild(exportJsonButton);
 
-  // Validate current stage button
-  const validateButton = createButton('Validate Current Stage', () => {
+  ioSection.appendChild(importTextarea);
+  ioSection.appendChild(ioButtons);
+  sidebar.appendChild(ioSection);
+
+  const qaSection = document.createElement('section');
+  qaSection.className = 'sidebar-section';
+  const qaHeading = document.createElement('h3');
+  qaHeading.textContent = 'Stage QA';
+  qaSection.appendChild(qaHeading);
+
+  const qaButtons = document.createElement('div');
+  qaButtons.className = 'button-row';
+
+  const validateButton = createButton('Validate Stage', () => {
     if (stageSelect) {
       const stageIndex = Number(stageSelect.value);
       const validation = validateStage(stageIndex);
 
-      // Show validation in a modal/alert
       const modal = document.createElement('div');
       modal.style.position = 'fixed';
       modal.style.top = '50%';
       modal.style.left = '50%';
       modal.style.transform = 'translate(-50%, -50%)';
       modal.style.background = 'white';
-      modal.style.padding = '30px';
-      modal.style.borderRadius = '10px';
-      modal.style.boxShadow = '0 10px 50px rgba(0,0,0,0.3)';
+      modal.style.padding = '24px';
+      modal.style.borderRadius = '8px';
+      modal.style.boxShadow = '0 12px 40px rgba(15,23,42,0.22)';
       modal.style.zIndex = '1000';
-      modal.style.maxWidth = '600px';
-      modal.style.maxHeight = '80vh';
+      modal.style.maxWidth = '520px';
+      modal.style.maxHeight = '70vh';
       modal.style.overflow = 'auto';
 
       const pre = document.createElement('pre');
       pre.style.whiteSpace = 'pre-wrap';
       pre.style.fontFamily = 'monospace';
-      pre.style.fontSize = '14px';
-      pre.style.margin = '0 0 20px 0';
+      pre.style.fontSize = '13px';
+      pre.style.margin = '0 0 16px 0';
       pre.textContent = validation;
 
       const closeBtn = createButton('Close', () => {
         document.body.removeChild(overlay);
       }, 'secondary');
 
-      const copyBtn = createButton('Copy to Clipboard', () => {
+      const copyBtn = createButton('Copy Text', () => {
         copyToClipboard(validation);
       }, 'primary');
-      copyBtn.style.marginRight = '10px';
+      copyBtn.style.marginRight = '8px';
 
       const btnContainer = document.createElement('div');
+      btnContainer.className = 'button-row';
       btnContainer.appendChild(copyBtn);
       btnContainer.appendChild(closeBtn);
 
@@ -548,7 +783,7 @@ function createSidebarControls(): void {
       overlay.style.left = '0';
       overlay.style.width = '100%';
       overlay.style.height = '100%';
-      overlay.style.background = 'rgba(0,0,0,0.5)';
+      overlay.style.background = 'rgba(15,23,42,0.55)';
       overlay.style.zIndex = '999';
       overlay.appendChild(modal);
 
@@ -561,17 +796,21 @@ function createSidebarControls(): void {
       document.body.appendChild(overlay);
     }
   }, 'primary');
-  sidebar.appendChild(validateButton);
 
-  // Export stage to file button
-  const exportStageButton = createButton('Export Current Stage to File', () => {
+  const exportStageButton = createButton('Export Stage', () => {
     if (stageSelect) {
       const stageIndex = Number(stageSelect.value);
       exportStageToFile(stageIndex);
-      updateStatus(`Exported ${stages[stageIndex].name} to file`);
+      updateStatus(`Exported ${stages[stageIndex].name}`);
     }
   }, 'secondary');
-  sidebar.appendChild(exportStageButton);
+
+  qaButtons.appendChild(validateButton);
+  qaButtons.appendChild(exportStageButton);
+  qaSection.appendChild(qaButtons);
+  sidebar.appendChild(qaSection);
+
+  enforceSpecialTileLimits();
 }
 
 createSidebarControls();

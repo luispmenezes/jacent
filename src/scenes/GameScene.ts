@@ -34,9 +34,8 @@ export class GameScene extends Phaser.Scene {
 
   // Endless mode state
   private isEndless: boolean = false;
-  private endlessMode: number = 1; // 1 = random spawn, 2 = Tetris-style
 
-  // Endless Mode 2 (Tetris-style) specific
+  // Endless mode (Tetris-style) specific
   private risingBlockTimer?: Phaser.Time.TimerEvent;
   private hasSpawnedFirstRow: boolean = false;
   private initialBottomRowCleared: boolean = false;
@@ -66,7 +65,7 @@ export class GameScene extends Phaser.Scene {
   private backgroundPanel!: Phaser.GameObjects.Image;
   private emptyTiles: Phaser.GameObjects.Sprite[] = [];
 
-  // Danger warning (Endless Mode 2)
+  // Danger warning (Endless Mode)
   private dangerBarBackground?: Phaser.GameObjects.Rectangle;
   private dangerBarFill?: Phaser.GameObjects.Rectangle;
   private dangerBarText?: Phaser.GameObjects.Text;
@@ -81,9 +80,8 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
-  init(data?: { stageIndex?: number; levelIndex?: number; isEndless?: boolean; endlessMode?: number }): void {
+  init(data?: { stageIndex?: number; levelIndex?: number; isEndless?: boolean }): void {
     this.isEndless = data?.isEndless ?? false;
-    this.endlessMode = data?.endlessMode ?? 1;
 
     if (!this.isEndless) {
       const requestedStage = data?.stageIndex ?? 0;
@@ -130,7 +128,7 @@ export class GameScene extends Phaser.Scene {
 
   update(): void {
     // Update danger bar if in danger mode
-    if (this.inDangerMode && this.endlessMode === 2) {
+    if (this.inDangerMode && this.isEndless) {
       this.updateDangerBar();
     }
   }
@@ -392,6 +390,7 @@ export class GameScene extends Phaser.Scene {
           }
         }
       }
+
     }
   }
 
@@ -403,8 +402,7 @@ export class GameScene extends Phaser.Scene {
     this.legalTargets = [];
 
     // Update title for endless mode
-    const modeTitle = this.endlessMode === 2 ? 'Endless Mode 2' : 'Endless Mode';
-    this.titleText.setText(modeTitle);
+    this.titleText.setText('Endless Mode');
     this.parText.setText(`Score: ${this.score}`);
 
     if (this.grid) {
@@ -444,8 +442,8 @@ export class GameScene extends Phaser.Scene {
     this.updateUndoButton();
     this.updateUI();
 
-    // Start rising block timer for Endless Mode 2
-    if (this.endlessMode === 2) {
+    // Start rising block timer for Endless Mode
+    if (this.isEndless) {
       this.startRisingBlockTimer();
     }
   }
@@ -463,41 +461,25 @@ export class GameScene extends Phaser.Scene {
       let positions: { x: number; y: number }[] = [];
       let numInitialTiles: number;
 
-      if (this.endlessMode === 2) {
-        // For Endless Mode 2, fill the bottom 2 rows completely
-        for (let y = gridHeight - 2; y < gridHeight; y++) {
-          for (let x = 0; x < gridWidth; x++) {
-            positions.push({ x, y });
-          }
+      // Fill the bottom 2 rows completely
+      for (let y = gridHeight - 2; y < gridHeight; y++) {
+        for (let x = 0; x < gridWidth; x++) {
+          positions.push({ x, y });
         }
-        numInitialTiles = positions.length; // All positions in bottom 2 rows
-      } else {
-        // For Endless Mode 1, spawn randomly across the grid
-        for (let y = 0; y < gridHeight; y++) {
-          for (let x = 0; x < gridWidth; x++) {
-            positions.push({ x, y });
-          }
-        }
-        // Shuffle and take 12-16 random positions
-        Phaser.Utils.Array.Shuffle(positions);
-        numInitialTiles = Phaser.Math.Between(12, 16);
       }
+      numInitialTiles = positions.length; // All positions in bottom 2 rows
 
       // Create tiles at positions
       for (let i = 0; i < numInitialTiles; i++) {
         const pos = positions[i];
-        // In Endless Mode 2: 1-7 with 5% special tiles (W/+/-), otherwise 1-5
+        // 1-7 with 5% special tiles (W/+/-)
         let digit: number | 'W' | '+' | '-';
-        if (this.endlessMode === 2) {
-          const isSpecial = Math.random() < 0.05; // 5% chance for special tile
-          if (isSpecial) {
-            const specialTiles: ('W' | '+' | '-')[] = ['W', '+', '-'];
-            digit = specialTiles[Math.floor(Math.random() * 3)];
-          } else {
-            digit = Phaser.Math.Between(1, 7);
-          }
+        const isSpecial = Math.random() < 0.05; // 5% chance for special tile
+        if (isSpecial) {
+          const specialTiles: ('W' | '+' | '-')[] = ['W', '+', '-'];
+          digit = specialTiles[Math.floor(Math.random() * 3)];
         } else {
-          digit = Phaser.Math.Between(1, 5);
+          digit = Phaser.Math.Between(1, 7);
         }
         const worldPos = grid.getWorldPosition(pos.x, pos.y);
         const tile = new Tile(this, worldPos.x, worldPos.y, digit, pos.x, pos.y);
@@ -759,7 +741,7 @@ export class GameScene extends Phaser.Scene {
 
     // Calculate merge range based on current grid size and tile spacing
     const gridSize = grid.getGridSize();
-    const tileSize = this.isEndless && this.endlessMode === 2
+    const tileSize = this.isEndless
       ? this.getTileSizeForEndlessGrid(grid.getGridWidth(), grid.getGridHeight())
       : this.getTileSizeForGrid(gridSize);
     const mergeRange = tileSize * 0.6; // 60% of tile size
@@ -916,18 +898,13 @@ export class GameScene extends Phaser.Scene {
         // In endless mode, spawn a new tile after merge
         if (this.isEndless) {
           this.time.delayedCall(250, () => {
-            // Apply gravity in Endless Mode 2
-            if (this.endlessMode === 2) {
+            // Apply gravity in Endless Mode
+            if (this.isEndless) {
               this.applyGravity();
               // Check if clearing tiles got us out of danger
               this.checkDangerZone();
               // Check if we need to spawn early due to no moves
               this.checkForEarlySpawn();
-            }
-
-            // Only spawn tiles in Endless Mode 1 (original)
-            if (this.endlessMode === 1) {
-              this.spawnNewTileInEndlessMode();
             }
 
             this.updateUI();
@@ -1091,117 +1068,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ========================================
-  // ENDLESS MODE 1 - Random Tile Spawning
-  // ========================================
-  private spawnNewTileInEndlessMode(): void {
-    if (!this.grid) return;
-
-    const gridWidth = this.grid.getGridWidth();
-    const gridHeight = this.grid.getGridHeight();
-
-    // Find all empty positions
-    const emptyPositions: { x: number; y: number }[] = [];
-
-    for (let y = 0; y < gridHeight; y++) {
-      for (let x = 0; x < gridWidth; x++) {
-        if (!this.grid.isOccupied(x, y)) {
-          emptyPositions.push({ x, y });
-        }
-      }
-    }
-
-    // If no empty positions, grid is full
-    if (emptyPositions.length === 0) return;
-
-    // Pick a random empty position
-    const spawnPos = Phaser.Utils.Array.GetRandom(emptyPositions);
-
-    // Find neighboring tiles (orthogonally adjacent)
-    const neighbors: number[] = [];
-    const { x, y } = spawnPos;
-
-    // Collect neighboring tile values (excluding wildcards)
-    if (x > 0 && this.grid.isOccupied(x - 1, y)) {
-      const tile = this.grid.getTile(x - 1, y)!;
-      if (typeof tile.digit === 'number') neighbors.push(tile.digit);
-    }
-    if (x < gridWidth - 1 && this.grid.isOccupied(x + 1, y)) {
-      const tile = this.grid.getTile(x + 1, y)!;
-      if (typeof tile.digit === 'number') neighbors.push(tile.digit);
-    }
-    if (y > 0 && this.grid.isOccupied(x, y - 1)) {
-      const tile = this.grid.getTile(x, y - 1)!;
-      if (typeof tile.digit === 'number') neighbors.push(tile.digit);
-    }
-    if (y < gridHeight - 1 && this.grid.isOccupied(x, y + 1)) {
-      const tile = this.grid.getTile(x, y + 1)!;
-      if (typeof tile.digit === 'number') neighbors.push(tile.digit);
-    }
-
-    let digit: number;
-    if (neighbors.length > 0) {
-      // Pick a random neighbor
-      const neighborValue = Phaser.Utils.Array.GetRandom(neighbors);
-      // Spawn a tile that differs by 1-3 from that neighbor
-      const diff = Phaser.Math.Between(1, 3);
-      // Randomly choose to add or subtract
-      const direction = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
-      digit = neighborValue + (diff * direction);
-      // Clamp to valid range (1-7)
-      digit = Phaser.Math.Clamp(digit, 1, 7);
-    } else {
-      // No neighbors, spawn random low value
-      digit = Phaser.Math.Between(1, 3);
-    }
-    const worldPos = this.grid.getWorldPosition(spawnPos.x, spawnPos.y);
-
-    const tileSize = this.getTileSizeForEndlessGrid(gridWidth, gridHeight);
-    const tile = new Tile(this, worldPos.x, worldPos.y, digit, spawnPos.x, spawnPos.y);
-
-    const targetScale = tileSize / tile.width;
-
-    tile.on('dragstart', () => {
-      this.handleTileDragStart(tile);
-    });
-
-    tile.on('drag', () => {
-      this.handleTileDrag(tile);
-    });
-
-    tile.on('drop', (droppedTile: Tile) => {
-      this.handleTileDrop(droppedTile);
-    });
-
-    this.grid.addTile(tile, spawnPos.x, spawnPos.y);
-
-    // Add entrance animation
-    tile.setAlpha(0);
-    tile.setScale(0);
-    this.tweens.add({
-      targets: tile,
-      alpha: 1,
-      scale: targetScale,
-      duration: 300,
-      ease: 'Back.easeOut',
-    });
-
-    // Make it draggable
-    this.input.setDraggable(tile);
-  }
-
-  // ========================================
   // GAME STATE CHECKING
   // ========================================
   private checkGameState(): void {
-    // In endless mode, never trigger win condition (only game over when no moves)
+    // In endless mode, never trigger win condition
     if (this.isEndless) {
-      // In Endless Mode 2, don't end game on no moves - blocks keep rising
-      if (this.endlessMode === 1) {
-        if (this.grid && !this.grid.hasLegalMoves()) {
-          this.handleGameOver();
-        }
-      }
-      // Endless Mode 2 only ends when grid is completely full and no moves left
+      // Endless mode only ends when grid is completely full and danger timer expires
       // (which should rarely happen since blocks keep spawning)
     } else {
       if (this.grid && this.grid.checkWinCondition()) {
@@ -1489,7 +1361,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.isEndless) {
-      this.scene.restart({ isEndless: true, endlessMode: this.endlessMode });
+      this.scene.restart({ isEndless: true });
     } else {
       this.scene.restart({ stageIndex: this.currentStageIndex, levelIndex: this.currentLevelIndex });
     }
@@ -1529,7 +1401,7 @@ export class GameScene extends Phaser.Scene {
   }
 
 
-  // Endless Mode 2: Spawn a new row of tiles at the top
+  // Endless Mode: Spawn a new row of tiles at the top
   private spawnTopRow(): void {
     if (!this.grid) return;
 
@@ -1581,7 +1453,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // Endless Mode 2: Calculate spawn interval based on score
+  // Endless Mode: Calculate spawn interval based on score
   private getRisingBlockInterval(): number {
     // Start at 10000ms (10 seconds), decrease by 50ms every 10 score points
     // Minimum of 3000ms (3 seconds)
@@ -1591,7 +1463,7 @@ export class GameScene extends Phaser.Scene {
     return interval;
   }
 
-  // Endless Mode 2: Start or restart the rising block timer
+  // Endless Mode: Start or restart the rising block timer
   private startRisingBlockTimer(): void {
     // Clean up existing timer
     if (this.risingBlockTimer) {
@@ -1611,7 +1483,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // Endless Mode 2: Called when it's time to spawn new row (like Tetris)
+  // Endless Mode: Called when it's time to spawn new row (like Tetris)
   private onRisingBlockTick(): void {
     if (!this.gameActive || !this.grid) return;
 
@@ -1632,9 +1504,9 @@ export class GameScene extends Phaser.Scene {
     this.startRisingBlockTimer();
   }
 
-  // Endless Mode 2: Check if grid is too empty and no moves available
+  // Endless Mode: Check if grid is too empty and no moves available
   private checkForEarlySpawn(): void {
-    if (!this.grid || this.endlessMode !== 2 || !this.gameActive) return;
+    if (!this.grid || !this.isEndless || !this.gameActive) return;
 
     const gridWidth = this.grid.getGridWidth();
     const gridHeight = this.grid.getGridHeight();
@@ -1672,9 +1544,9 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Endless Mode 2: Check if any column is full (danger zone)
+  // Endless Mode: Check if any column is full (danger zone)
   private checkDangerZone(): void {
-    if (!this.grid || this.endlessMode !== 2) return;
+    if (!this.grid || !this.isEndless) return;
 
     const gridWidth = this.grid.getGridWidth();
     const gridHeight = this.grid.getGridHeight();
@@ -1716,7 +1588,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Endless Mode 2: Start the 5-second danger countdown
+  // Endless Mode: Start the 5-second danger countdown
   private startDangerMode(): void {
     this.inDangerMode = true;
     this.dangerStartTime = this.time.now;
@@ -1760,7 +1632,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // Endless Mode 2: Exit danger mode (player cleared the top)
+  // Endless Mode: Exit danger mode (player cleared the top)
   private exitDangerMode(): void {
     this.inDangerMode = false;
 
